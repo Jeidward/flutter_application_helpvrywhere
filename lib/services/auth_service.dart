@@ -47,12 +47,23 @@ class AuthService {
 
   // ─── Login ───────────────────────────────────────────────────────────────
 
-  // TODO: implement email/password login (donghwan/feature/login-logout)
-  // TODO: implement Google sign-in (donghwan/feature/login-logout)
+  /// Signs in with email and password.
+  Future<UserCredential> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    return await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
 
   // ─── Logout ──────────────────────────────────────────────────────────────
 
-  // TODO: implement sign out (donghwan/feature/login-logout)
+  /// Signs out the current user.
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
 
   // ─── Identity Verification ───────────────────────────────────────────────
 
