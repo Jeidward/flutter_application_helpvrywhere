@@ -16,7 +16,34 @@ class AuthService {
 
   // ─── Registration ────────────────────────────────────────────────────────
 
-  // TODO: implement email/password registration (donghwan/feature/registration)
+  /// Registers a new user with email/password, creates Firestore user document.
+  /// Returns the UserCredential on success, throws FirebaseAuthException on failure.
+  Future<UserCredential> registerWithEmail({
+    required String email,
+    required String password,
+    required String username,
+  }) async {
+    // Create Firebase Auth account
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+
+    // Save user profile to Firestore
+    final user = UserModel(
+      uid: credential.user!.uid,
+      email: email,
+      username: username,
+      isEmailVerified: false,
+      createdAt: DateTime.now(),
+    );
+    await createUserDocument(user);
+
+    // Send email verification
+    await credential.user!.sendEmailVerification();
+
+    return credential;
+  }
 
   // ─── Login ───────────────────────────────────────────────────────────────
 
