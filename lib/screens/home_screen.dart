@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
-import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // [DH] for logout
+import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // for logout
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
