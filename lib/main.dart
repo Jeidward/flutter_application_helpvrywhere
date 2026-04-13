@@ -1,7 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/firebase_options.dart';
-import 'package:flutter_application_helpvrywhere/screens/home_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
+import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 void main() async {
@@ -24,7 +26,11 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       initialRoute: '/',
-      routes: {'/': (context) => const HomeScreen()},
+      routes: {
+        '/': (context) => const AuthWrapper(), // was HomeScreen, now checks auth state
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegistrationScreen(),
+      },
     );
   }
 }
