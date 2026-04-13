@@ -1,19 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserModel {
-  final String uid;           // Firebase Auth unique user ID
-  final String email;         // Used for login and contact
-  final String username;      // Unique name chosen by user — shown on HomeScreen greeting and profile
-  final String? photoUrl;     // Profile picture — auto-filled by Google sign-in, null for email users
-  final bool isPhoneVerified; // Phone-verified users can access help request features
-  final DateTime createdAt;   // Timestamp when the user account was created
+  final String uid;                 // Firebase Auth unique user ID
+  final String email;               // Used for login and contact
+  final String username;            // Unique name chosen by user — shown on HomeScreen greeting and profile
+  final String? photoUrl;           // Profile picture — auto-filled by Google sign-in, null for email users
+  final DateTime? phoneVerifiedUntil; // null = never verified, non-null = verification expiry date (180 days from verification)
+  final DateTime createdAt;         // Timestamp when the user account was created
 
   UserModel({
     required this.uid,
     required this.email,
     required this.username,
     this.photoUrl,
-    required this.isPhoneVerified,
+    this.phoneVerifiedUntil,
     required this.createdAt,
   });
 
@@ -24,7 +24,9 @@ class UserModel {
       email: data['email'] ?? '',
       username: data['username'] ?? '',
       photoUrl: data['photoUrl'],
-      isPhoneVerified: data['isPhoneVerified'] ?? false,
+      phoneVerifiedUntil: data['phoneVerifiedUntil'] != null
+          ? (data['phoneVerifiedUntil'] as Timestamp).toDate()
+          : null,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
     );
   }
@@ -35,7 +37,9 @@ class UserModel {
       'email': email,
       'username': username,
       'photoUrl': photoUrl,
-      'isPhoneVerified': isPhoneVerified,
+      'phoneVerifiedUntil': phoneVerifiedUntil != null
+          ? Timestamp.fromDate(phoneVerifiedUntil!)
+          : null,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }

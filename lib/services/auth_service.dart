@@ -34,7 +34,7 @@ class AuthService {
       uid: credential.user!.uid,
       email: email,
       username: username,
-      isPhoneVerified: false,
+      phoneVerifiedUntil: null,
       createdAt: DateTime.now(),
     );
     await createUserDocument(user);
@@ -76,7 +76,7 @@ class AuthService {
       verificationCompleted: (PhoneAuthCredential credential) async {
         // Auto-verification (Android only) — link to current account
         await _auth.currentUser?.linkWithCredential(credential);
-        await _updatePhoneVerified(true);
+        await _updatePhoneVerified();
       },
       verificationFailed: (FirebaseAuthException e) {
         onError(e.message ?? 'Verification failed');
@@ -98,15 +98,17 @@ class AuthService {
       smsCode: smsCode,
     );
     await _auth.currentUser?.linkWithCredential(credential);
-    await _updatePhoneVerified(true);
+    await _updatePhoneVerified();
   }
 
-  /// Updates isPhoneVerified in Firestore.
-  Future<void> _updatePhoneVerified(bool verified) async {
+  /// Sets phoneVerifiedUntil to N days from now in Firestore.
+  Future<void> _updatePhoneVerified() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
+    // Change the number below to adjust verification expiry period (cur: 180)
+    final expiryDate = DateTime.now().add(const Duration(days: 180));
     await _db.collection('users').doc(uid).update({
-      'isPhoneVerified': verified,
+      'phoneVerifiedUntil': Timestamp.fromDate(expiryDate),
     });
   }
 
