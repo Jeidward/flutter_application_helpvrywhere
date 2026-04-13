@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
+import '../services/auth_service.dart'; // for logout
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -15,6 +16,16 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          // Logout button for testing
+          IconButton(
+            onPressed: () async {
+              await AuthService().signOut();
+              if (context.mounted) {
+                Navigator.pushReplacementNamed(context, '/');
+              }
+            },
+            icon: const Icon(Icons.logout),
+          ),
           IconButton(
             onPressed: () {},
             icon: CircleAvatar(backgroundColor: Colors.blueGrey),
