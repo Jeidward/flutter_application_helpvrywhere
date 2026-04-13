@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
-import '../services/auth_service.dart'; // for logout
+import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
+import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // [DH] for logout
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -104,17 +105,27 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Container(
-                    height: 135,
-                    padding: EdgeInsets.all(25),
-                    alignment: Alignment.bottomLeft,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: Color.fromARGB(139, 219, 165, 255),
-                    ),
-                    child: Text(
-                      "Create a request",
-                      style: TextStyle(fontSize: 20),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => RequestCreationScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      height: 135,
+                      padding: EdgeInsets.all(25),
+                      alignment: Alignment.bottomLeft,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: Color.fromARGB(139, 219, 165, 255),
+                      ),
+                      child: Text(
+                        "Create a request",
+                        style: TextStyle(fontSize: 20),
+                      ),
                     ),
                   ),
                 ),
