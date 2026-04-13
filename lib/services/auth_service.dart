@@ -34,13 +34,10 @@ class AuthService {
       uid: credential.user!.uid,
       email: email,
       username: username,
-      isEmailVerified: false,
+      isPhoneVerified: false,
       createdAt: DateTime.now(),
     );
     await createUserDocument(user);
-
-    // Send email verification
-    await credential.user!.sendEmailVerification();
 
     return credential;
   }
@@ -65,9 +62,53 @@ class AuthService {
     await _auth.signOut();
   }
 
-  // ─── Identity Verification ───────────────────────────────────────────────
+  // ─── Identity Verification (Phone) ───────────────────────────────────────
 
-  // TODO: implement email verification send/check (donghwan/feature/identity-verification)
+  /// Sends SMS verification code to the given phone number.
+  /// codeSent callback provides verificationId needed to complete verification.
+  Future<void> verifyPhoneNumber({
+    required String phoneNumber,
+    required void Function(String verificationId) onCodeSent,
+    required void Function(String error) onError,
+  }) async {
+    await _auth.verifyPhoneNumber(
+      phoneNumber: phoneNumber,
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        // Auto-verification (Android only) — link to current account
+        await _auth.currentUser?.linkWithCredential(credential);
+        await _updatePhoneVerified(true);
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        onError(e.message ?? 'Verification failed');
+      },
+      codeSent: (String verificationId, int? resendToken) {
+        onCodeSent(verificationId);
+      },
+      codeAutoRetrievalTimeout: (String verificationId) {},
+    );
+  }
+
+  /// Verifies the SMS code entered by user and links phone to account.
+  Future<void> confirmSmsCode({
+    required String verificationId,
+    required String smsCode,
+  }) async {
+    final credential = PhoneAuthProvider.credential(
+      verificationId: verificationId,
+      smsCode: smsCode,
+    );
+    await _auth.currentUser?.linkWithCredential(credential);
+    await _updatePhoneVerified(true);
+  }
+
+  /// Updates isPhoneVerified in Firestore.
+  Future<void> _updatePhoneVerified(bool verified) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).update({
+      'isPhoneVerified': verified,
+    });
+  }
 
   // ─── Profile ─────────────────────────────────────────────────────────────
 

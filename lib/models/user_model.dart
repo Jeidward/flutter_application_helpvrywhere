@@ -5,7 +5,7 @@ class UserModel {
   final String email;         // Used for login and contact
   final String username;      // Unique name chosen by user — shown on HomeScreen greeting and profile
   final String? photoUrl;     // Profile picture — auto-filled by Google sign-in, null for email users
-  final bool isEmailVerified; // Used for identity verification gating
+  final bool isPhoneVerified; // Phone-verified users can access help request features
   final DateTime createdAt;   // Timestamp when the user account was created
 
   UserModel({
@@ -13,7 +13,7 @@ class UserModel {
     required this.email,
     required this.username,
     this.photoUrl,
-    required this.isEmailVerified,
+    required this.isPhoneVerified,
     required this.createdAt,
   });
 
@@ -24,7 +24,7 @@ class UserModel {
       email: data['email'] ?? '',
       username: data['username'] ?? '',
       photoUrl: data['photoUrl'],
-      isEmailVerified: data['isEmailVerified'] ?? false,
+      isPhoneVerified: data['isPhoneVerified'] ?? false,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
     );
   }
@@ -35,7 +35,7 @@ class UserModel {
       'email': email,
       'username': username,
       'photoUrl': photoUrl,
-      'isEmailVerified': isEmailVerified,
+      'isPhoneVerified': isPhoneVerified,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
