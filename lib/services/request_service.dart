@@ -28,7 +28,7 @@ class RequestService {
   Stream<List<RequestModel>> getUserRequests(String userId) {
     return _db
         .collection(collection)
-        .where('userId' == userId)
+        .where('userId', isEqualTo: userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map(

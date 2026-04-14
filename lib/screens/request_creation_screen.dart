@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/request_service.dart';
 import '../models/request_model.dart';
+import '../services/auth_service.dart';
 
 class RequestCreationScreen extends StatefulWidget {
   const RequestCreationScreen({super.key});
@@ -13,6 +14,9 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
   final _formKey = GlobalKey<FormState>();
   final RequestService _service = RequestService();
 
+  final AuthService _authService = AuthService();
+
+  /// Data to complete the form
   final _titleController = TextEditingController();
   final _categoryController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -37,6 +41,15 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
   Future<void> createRequest() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final user = _authService.currentUser;
+
+    if (user == null) {
+      setState(() {
+        _error = 'User not logged in';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -53,7 +66,7 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
         dateTime: DateTime.now(),
         createdAt: DateTime.now(),
         status: RequestStatus.active,
-        userId: 'test_user', // à remplacer plus tard
+        userId: user!.uid,
       );
 
       final doc = await _service.createRequest(request);
