@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/request_service.dart';
 import '../models/request_model.dart';
 import '../services/auth_service.dart';
+import 'request_edit_screen.dart';
 
 class RequestListScreen extends StatefulWidget {
   const RequestListScreen({super.key});
@@ -48,7 +49,7 @@ class _RequestListScreenState extends State<RequestListScreen> {
 
               return Card(
                 child: ListTile(
-                  title: Text('${request.category} • ${request.status.name}'),
+                  title: Text('${request.title} • ${request.status.name}'),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -59,6 +60,17 @@ class _RequestListScreenState extends State<RequestListScreen> {
                       const SizedBox(height: 4),
                       Text(request.description),
                     ],
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RequestEditScreen(request: request),
+                        ),
+                      );
+                    },
                   ),
                 ),
               );
