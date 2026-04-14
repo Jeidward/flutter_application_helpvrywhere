@@ -38,6 +38,10 @@ class RequestService {
         );
   }
 
+  Future<void> updateRequest(String id, Map<String, dynamic> data) async {
+    await _db.collection(collection).doc(id).update(data);
+  }
+
   // UPDATE
   Future<void> updateStatus(String id, RequestStatus status) async {
     await _db.collection(collection).doc(id).update({'status': status.name});
