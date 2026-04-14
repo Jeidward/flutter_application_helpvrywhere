@@ -10,74 +10,157 @@ class RequestCreationScreen extends StatefulWidget {
 }
 
 class _RequestCreationScreenState extends State<RequestCreationScreen> {
+  final _formKey = GlobalKey<FormState>();
   final RequestService _service = RequestService();
 
+  final _titleController = TextEditingController();
+  final _categoryController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _phoneController = TextEditingController();
+
+  bool _isLoading = false;
+  String? _error;
   String? lastCreatedId;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _categoryController.dispose();
+    _descriptionController.dispose();
+    _locationController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
 
   // CREATE
   Future<void> createRequest() async {
-    final request = RequestModel(
-      id: '',
-      title: 'Test Request',
-      category: 'Test',
-      description: 'Created from button',
-      location: 'Paris',
-      dateTime: DateTime.now(),
-      phone: '0000000000',
-      status: RequestStatus.active,
-      createdAt: DateTime.now(),
-      userId: 'test_user',
-    );
-
-    final doc = await _service.createRequest(request);
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
-      lastCreatedId = doc.id;
+      _isLoading = true;
+      _error = null;
     });
 
-    print('Created ID: ${doc.id}');
-  }
+    try {
+      final request = RequestModel(
+        id: '',
+        title: _titleController.text.trim(),
+        category: _categoryController.text.trim(),
+        description: _descriptionController.text.trim(),
+        location: _locationController.text.trim(),
+        phone: _phoneController.text.trim(),
+        dateTime: DateTime.now(),
+        createdAt: DateTime.now(),
+        status: RequestStatus.active,
+        userId: 'test_user', // à remplacer plus tard
+      );
 
-  // DELETE
-  Future<void> deleteRequest() async {
-    if (lastCreatedId == null) {
-      print('No document to delete');
-      return;
+      final doc = await _service.createRequest(request);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Request created: ${doc.id}')));
+
+      _formKey.currentState!.reset();
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to create request';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-
-    await _service.deleteRequest(lastCreatedId!);
-
-    print('Deleted ID: $lastCreatedId');
-
-    setState(() {
-      lastCreatedId = null;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Request Creation Test')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton(
-              onPressed: createRequest,
-              child: const Text('Create Request'),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: deleteRequest,
-              child: const Text('Delete Request'),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              lastCreatedId != null
-                  ? 'Last created ID: $lastCreatedId'
-                  : 'No request created',
-            ),
-          ],
+      appBar: AppBar(title: const Text('Create Request')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // TITLE
+              TextFormField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Title',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Required' : null,
+              ),
+
+              const SizedBox(height: 16),
+
+              // CATEGORY
+              TextFormField(
+                controller: _categoryController,
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Required' : null,
+              ),
+
+              const SizedBox(height: 16),
+
+              // DESCRIPTION
+              TextFormField(
+                controller: _descriptionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Required' : null,
+              ),
+
+              const SizedBox(height: 16),
+
+              // LOCATION
+              TextFormField(
+                controller: _locationController,
+                decoration: const InputDecoration(
+                  labelText: 'Location',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // PHONE
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Phone',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              if (_error != null)
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+
+              const SizedBox(height: 12),
+
+              ElevatedButton(
+                onPressed: _isLoading ? null : createRequest,
+                child: _isLoading
+                    ? const CircularProgressIndicator()
+                    : const Text('Create Request'),
+              ),
+            ],
+          ),
         ),
       ),
     );
