@@ -101,6 +101,16 @@ class AuthService {
     await _updatePhoneVerified();
   }
 
+  /// Unlinks phone number from current account and clears phoneVerifiedUntil.
+  Future<void> unlinkPhone() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await user.unlink('phone');
+    await _db.collection('users').doc(user.uid).update({
+      'phoneVerifiedUntil': null,
+    });
+  }
+
   /// Sets phoneVerifiedUntil to N days from now in Firestore.
   Future<void> _updatePhoneVerified() async {
     final uid = _auth.currentUser?.uid;

@@ -61,13 +61,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               'You can also verify later from your profile.',
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Later'),
-              ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 child: const Text('Verify Now'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Later'),
               ),
             ],
           ),

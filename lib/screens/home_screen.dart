@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_application_helpvrywhere/models/user_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // for logout
@@ -17,9 +19,34 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          // Profile button (temporary — will be expanded to full profile screen later)
+          IconButton(
+            onPressed: () => _showProfileDialog(context),
+            icon: const Icon(Icons.person),
+          ),
           // Logout button for testing
           IconButton(
             onPressed: () async {
+              // Confirm before logging out
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Log out?'),
+                  content: const Text('Are you sure you want to log out?'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Log Out'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm != true) return;
+
               await AuthService().signOut();
               if (context.mounted) {
                 Navigator.pushReplacementNamed(context, '/');
@@ -136,4 +163,52 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+// Shows a dialog with phone verification status and verify/unlink action.
+// Will be expanded into a proper profile screen later.
+Future<void> _showProfileDialog(BuildContext context) async {
+  final authService = AuthService();
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+
+  final user = await authService.getUserDocument(uid);
+  if (!context.mounted || user == null) return;
+
+  final isVerified = user.phoneVerifiedUntil != null &&
+      user.phoneVerifiedUntil!.isAfter(DateTime.now());
+
+  await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Profile'),
+      content: Text(
+        isVerified
+            ? 'Phone verified until: ${user.phoneVerifiedUntil!.toLocal().toString().split(' ')[0]}'
+            : 'Phone not verified.',
+      ),
+      actions: [
+        if (isVerified)
+          ElevatedButton(
+            onPressed: () async {
+              await authService.unlinkPhone();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Unlink Phone'),
+          )
+        else
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/verify-phone');
+            },
+            child: const Text('Verify Phone'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
 }
