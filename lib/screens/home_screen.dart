@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -113,6 +114,36 @@ class HomeScreen extends StatelessWidget {
                       ),
                       child: Text(
                         "Create a request",
+                        style: TextStyle(fontSize: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              spacing: 10,
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => RequestListScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      height: 135,
+                      padding: EdgeInsets.all(25),
+                      alignment: Alignment.bottomLeft,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: Color.fromARGB(139, 219, 165, 255),
+                      ),
+                      child: Text(
+                        "Get all my request",
                         style: TextStyle(fontSize: 20),
                       ),
                     ),
