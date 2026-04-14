@@ -62,6 +62,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
         'description': _descriptionController.text.trim(),
         'location': _locationController.text.trim(),
         'phone': _phoneController.text.trim(),
+        'status': RequestStatus.active.name,
       });
 
       ScaffoldMessenger.of(

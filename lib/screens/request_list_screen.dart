@@ -61,16 +61,50 @@ class _RequestListScreenState extends State<RequestListScreen> {
                       Text(request.description),
                     ],
                   ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RequestEditScreen(request: request),
-                        ),
-                      );
-                    },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // EDIT
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  RequestEditScreen(request: request),
+                            ),
+                          );
+                        },
+                      ),
+                      // CANCEL
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _service.updateStatus(
+                            request.id,
+                            RequestStatus.cancelled,
+                          );
+                        },
+                      ),
+                      // COMPLETE
+                      IconButton(
+                        icon: const Icon(Icons.check),
+                        onPressed: () {
+                          _service.updateStatus(
+                            request.id,
+                            RequestStatus.completed,
+                          );
+                        },
+                      ),
+                      // DELETE
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () {
+                          _service.deleteRequest(request.id);
+                        },
+                      ),
+                    ],
                   ),
                 ),
               );
