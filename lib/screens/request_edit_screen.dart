@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import '../services/request_service.dart';
 import '../models/request_model.dart';
-import '../services/auth_service.dart';
 
-class RequestCreationScreen extends StatefulWidget {
-  const RequestCreationScreen({super.key});
+class RequestEditScreen extends StatefulWidget {
+  final RequestModel request;
+
+  const RequestEditScreen({super.key, required this.request});
 
   @override
-  State<RequestCreationScreen> createState() => _RequestCreationScreenState();
+  State<RequestEditScreen> createState() => _RequestEditScreenState();
 }
 
-class _RequestCreationScreenState extends State<RequestCreationScreen> {
+class _RequestEditScreenState extends State<RequestEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final RequestService _service = RequestService();
 
-  final AuthService _authService = AuthService();
-
-  /// Data to complete the form
   final _titleController = TextEditingController();
   final _categoryController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -28,6 +26,17 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
   String? lastCreatedId;
 
   @override
+  void initState() {
+    super.initState();
+
+    _titleController.text = widget.request.title;
+    _categoryController.text = widget.request.category;
+    _descriptionController.text = widget.request.description;
+    _locationController.text = widget.request.location;
+    _phoneController.text = widget.request.phone;
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _categoryController.dispose();
@@ -37,18 +46,9 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
     super.dispose();
   }
 
-  // CREATE
-  Future<void> createRequest() async {
+  /// Update
+  Future<void> updateRequest() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final user = _authService.currentUser;
-
-    if (user == null) {
-      setState(() {
-        _error = 'User not logged in';
-      });
-      return;
-    }
 
     setState(() {
       _isLoading = true;
@@ -56,29 +56,23 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
     });
 
     try {
-      final request = RequestModel(
-        id: '',
-        title: _titleController.text.trim(),
-        category: _categoryController.text.trim(),
-        description: _descriptionController.text.trim(),
-        location: _locationController.text.trim(),
-        phone: _phoneController.text.trim(),
-        dateTime: DateTime.now(),
-        createdAt: DateTime.now(),
-        status: RequestStatus.active,
-        userId: user!.uid,
-      );
-
-      final doc = await _service.createRequest(request);
+      await _service.updateRequest(widget.request.id, {
+        'title': _titleController.text.trim(),
+        'category': _categoryController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'location': _locationController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'status': RequestStatus.active.name,
+      });
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Request created: ${doc.id}')));
+      ).showSnackBar(const SnackBar(content: Text('Request updated')));
 
-      _formKey.currentState!.reset();
+      Navigator.pop(context); // 🔥 retourne à la liste
     } catch (e) {
       setState(() {
-        _error = 'Failed to create request';
+        _error = 'Failed to update request';
       });
     } finally {
       if (mounted) {
@@ -167,10 +161,10 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
               const SizedBox(height: 12),
 
               ElevatedButton(
-                onPressed: _isLoading ? null : createRequest,
+                onPressed: _isLoading ? null : updateRequest,
                 child: _isLoading
                     ? const CircularProgressIndicator()
-                    : const Text('Create Request'),
+                    : const Text('Update Request'),
               ),
             ],
           ),

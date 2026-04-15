@@ -24,7 +24,26 @@ class RequestService {
         );
   }
 
+  // READ EVERY REQUEST FOR ONE USER
+  Stream<List<RequestModel>> getUserRequests(String userId) {
+    return _db
+        .collection(collection)
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => RequestModel.fromMap(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
   // UPDATE
+  Future<void> updateRequest(String id, Map<String, dynamic> data) async {
+    await _db.collection(collection).doc(id).update(data);
+  }
+
+  // UPDATE STATUS
   Future<void> updateStatus(String id, RequestStatus status) async {
     await _db.collection(collection).doc(id).update({'status': status.name});
   }
