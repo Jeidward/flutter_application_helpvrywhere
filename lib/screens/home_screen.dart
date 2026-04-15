@@ -5,30 +5,79 @@ import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // for logout
 import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
+import 'package:flutter_application_helpvrywhere/services/location_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  String _getCurrentTimeDate() {
+    final now = DateTime.now();
+    final hour = now.hour;
+    if (hour < 12) {
+      return "Good morning";
+    } else if (hour < 18) {
+      return "Good afternoon";
+    } else {
+      return "Good evening";
+    }
+  }
+
+  Widget _buildCard({
+    required IconData icons,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 150,
+          padding: EdgeInsets.all(25),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: color,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icons, size: 28),
+              Text(label, style: TextStyle(fontSize: 20)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          children: [
-            Text("good morning", style: TextStyle(fontSize: 15)),
-            Text("Seonwoo", style: TextStyle(fontSize: 25)),
-          ],
+        //for now futurBuilder, later can use provider or riverpod to avoid fetching user doc every time we open home screen, because it is not efficient
+        title: FutureBuilder<UserModel?>(
+          future: AuthService().getUserDocument(
+            FirebaseAuth.instance.currentUser?.uid ?? '',
+          ),
+          builder: (context, snapshot) {
+            final name = snapshot.data?.username ?? "User";
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_getCurrentTimeDate(), style: TextStyle(fontSize: 20)),
+                Text(name, style: TextStyle(fontSize: 25)),
+              ],
+            );
+          },
         ),
         actions: [
-          // Profile button (temporary — will be expanded to full profile screen later)
           IconButton(
             onPressed: () => _showProfileDialog(context),
             icon: const Icon(Icons.person),
           ),
-          // Logout button for testing
           IconButton(
             onPressed: () async {
-              // Confirm before logging out
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -65,50 +114,50 @@ class HomeScreen extends StatelessWidget {
         padding: EdgeInsets.all(12),
         child: Column(
           spacing: 10,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SizedBox(height: 20),
+            Text(
+              "What would you like to do?",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
             Row(
               spacing: 10,
               children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => RequestMapScreen(),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      height: 135,
-                      padding: EdgeInsets.all(25),
-                      alignment: Alignment.bottomLeft,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Color.fromARGB(249, 255, 247, 153),
-                      ),
-                      child: Text(
-                        "Find nearby requests",
-                        style: TextStyle(fontSize: 20),
-                      ),
-                    ),
+                _buildCard(
+                  icons: Icons.location_on,
+                  label: "Find nearby request",
+                  color: Color.fromARGB(249, 255, 247, 153),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => RequestMapScreen()),
                   ),
                 ),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {},
-                    child: Container(
-                      height: 135,
-                      padding: EdgeInsets.all(25),
-                      alignment: Alignment.bottomLeft,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Color.fromARGB(228, 148, 223, 255),
-                      ),
-                      child: Text(
-                        "AI tech support",
-                        style: TextStyle(fontSize: 20),
-                      ),
+                _buildCard(
+                  icons: Icons.smart_toy,
+                  label: "AI tech support",
+                  color: Color.fromARGB(228, 148, 223, 255),
+                  onTap: () {},
+                ),
+              ],
+            ),
+            Row(
+              spacing: 10,
+              children: [
+                _buildCard(
+                  icons: Icons.back_hand,
+                  label: "My help history",
+                  color: Color.fromARGB(236, 205, 255, 144),
+                  onTap: () {},
+                ),
+                _buildCard(
+                  icons: Icons.add,
+                  label: "Create a request",
+                  color: Color.fromARGB(139, 219, 165, 255),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => RequestCreationScreen(),
                     ),
                   ),
                 ),
@@ -117,73 +166,14 @@ class HomeScreen extends StatelessWidget {
             Row(
               spacing: 10,
               children: [
-                Expanded(
-                  child: Container(
-                    height: 135,
-                    padding: EdgeInsets.all(25),
-                    alignment: Alignment.bottomLeft,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: Color.fromARGB(236, 205, 255, 144),
-                    ),
-                    child: Text(
-                      "My help history",
-                      style: TextStyle(fontSize: 20),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => RequestCreationScreen(),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      height: 135,
-                      padding: EdgeInsets.all(25),
-                      alignment: Alignment.bottomLeft,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Color.fromARGB(139, 219, 165, 255),
-                      ),
-                      child: Text(
-                        "Create a request",
-                        style: TextStyle(fontSize: 20),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              spacing: 10,
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => RequestListScreen(),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      height: 135,
-                      padding: EdgeInsets.all(25),
-                      alignment: Alignment.bottomLeft,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Color.fromARGB(139, 219, 165, 255),
-                      ),
-                      child: Text(
-                        "Get all my request",
-                        style: TextStyle(fontSize: 20),
-                      ),
+                _buildCard(
+                  icons: Icons.list_alt,
+                  label: "Get all my request",
+                  color: Color.fromARGB(139, 219, 165, 255),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => RequestListScreen(),
                     ),
                   ),
                 ),
@@ -196,8 +186,6 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// Shows a dialog with phone verification status and verify/unlink action.
-// Will be expanded into a proper profile screen later.
 Future<void> _showProfileDialog(BuildContext context) async {
   final authService = AuthService();
   final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -206,7 +194,8 @@ Future<void> _showProfileDialog(BuildContext context) async {
   final user = await authService.getUserDocument(uid);
   if (!context.mounted || user == null) return;
 
-  final isVerified = user.phoneVerifiedUntil != null &&
+  final isVerified =
+      user.phoneVerifiedUntil != null &&
       user.phoneVerifiedUntil!.isAfter(DateTime.now());
 
   await showDialog(

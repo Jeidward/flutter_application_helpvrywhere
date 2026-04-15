@@ -5,6 +5,7 @@ import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
 import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/phone_verification_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 void main() async {
@@ -28,10 +29,12 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => const AuthWrapper(), // was HomeScreen, now checks auth state
+        '/': (context) =>
+            const AuthWrapper(), // was HomeScreen, now checks auth state
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegistrationScreen(),
         '/verify-phone': (context) => const PhoneVerificationScreen(),
+        '/nearby-request': (context) => const RequestMapScreen(),
       },
     );
   }
