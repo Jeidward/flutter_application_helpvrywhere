@@ -48,7 +48,38 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/');
+        // Ask user if they want to verify phone now or later
+        final verify = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('Phone Verification'),
+            content: const Text(
+              'To use help request features (request/accept), '
+              'phone verification is required.\n\n'
+              'Would you like to verify now? '
+              'You can also verify later from your profile.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Verify Now'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Later'),
+              ),
+            ],
+          ),
+        );
+
+        if (mounted) {
+          if (verify == true) {
+            Navigator.pushReplacementNamed(context, '/verify-phone');
+          } else {
+            Navigator.pushReplacementNamed(context, '/');
+          }
+        }
       }
     } on FirebaseAuthException catch (e) {
       setState(() {
