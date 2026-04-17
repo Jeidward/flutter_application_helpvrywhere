@@ -1,4 +1,4 @@
-import 'package:firebase_core/firebase_core.dart';
+﻿import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/firebase_options.dart';
 import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
@@ -7,7 +7,7 @@ import 'package:flutter_application_helpvrywhere/screens/phone_verification_scre
 import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
-import 'screens/ai_guide_screen.dart'; // ← Tadeo: pantalla del AI feature
+import 'screens/ai_guide_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -23,14 +23,6 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-<<<<<<< HEAD
-      title: 'HelpVrywhere',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A6B5A)),
-      ),
-      home: const AIGuideScreen(), // ← Lanza directo al AI Guide por ahora
-=======
       debugShowCheckedModeBanner: false,
       title: 'HelpEverywhere',
       theme: ThemeData(
@@ -38,14 +30,12 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) =>
-            const AuthWrapper(), // was HomeScreen, now checks auth state
+        '/': (context) => const AuthWrapper(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegistrationScreen(),
         '/verify-phone': (context) => const PhoneVerificationScreen(),
         '/nearby-request': (context) => const RequestMapScreen(),
       },
->>>>>>> origin/develop
     );
   }
 }
