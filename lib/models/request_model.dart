@@ -7,7 +7,9 @@ class RequestModel {
   final String title;
   final String category;
   final String description;
-  final String location;
+  final String? location;
+  final double longitude;
+  final double latitude;
   final DateTime dateTime;
   final String phone;
   final RequestStatus status;
@@ -19,7 +21,9 @@ class RequestModel {
     required this.title,
     required this.category,
     required this.description,
-    required this.location,
+    this.location,
+    required this.latitude,
+    required this.longitude,
     required this.dateTime,
     required this.phone,
     required this.status,
@@ -34,6 +38,8 @@ class RequestModel {
       category: data['category'] ?? '',
       description: data['description'] ?? '',
       location: data['location'] ?? '',
+      longitude: (data['longitude'] ?? 0).toDouble(),
+      latitude: (data['latitude'] ?? 0).toDouble(),
       dateTime: (data['dateTime'] as Timestamp).toDate(),
       phone: data['phone'] ?? '',
       status: _statusFromString(data['status']),
@@ -48,6 +54,8 @@ class RequestModel {
       'category': category,
       'description': description,
       'location': location,
+      'longitude': longitude,
+      'latitude': latitude,
       'dateTime': Timestamp.fromDate(dateTime),
       'phone': phone,
       'status': status.name,
