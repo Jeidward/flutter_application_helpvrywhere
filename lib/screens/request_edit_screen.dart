@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/request_service.dart';
 import '../models/request_model.dart';
+import '../services/location_service.dart';
 
 class RequestEditScreen extends StatefulWidget {
   final RequestModel request;
@@ -21,7 +22,11 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
   final _locationController = TextEditingController();
   final _phoneController = TextEditingController();
 
+  double? _latitude;
+  double? _longitude;
+
   bool _isLoading = false;
+  bool _isLocating = false;
   String? _error;
   String? lastCreatedId;
 
@@ -32,8 +37,10 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
     _titleController.text = widget.request.title;
     _categoryController.text = widget.request.category;
     _descriptionController.text = widget.request.description;
-    _locationController.text = widget.request.location;
+    _locationController.text = widget.request.location ?? '';
     _phoneController.text = widget.request.phone;
+    _latitude = widget.request.latitude;
+    _longitude = widget.request.longitude;
   }
 
   @override
@@ -46,6 +53,37 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
     super.dispose();
   }
 
+  Future<void> getLocation() async {
+    setState(() {
+      _isLocating = true;
+      _error = null;
+    });
+    try {
+      final position = await LocationService().getCurrentLocation();
+
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Impossible to obtain the position';
+      });
+    } finally {
+      setState(() {
+        _isLocating = false;
+      });
+    }
+  }
+
+  void clearLocation() {
+    setState(() {
+      _latitude = null;
+      _longitude = null;
+      _locationController.clear();
+    });
+  }
+
   /// Update
   Future<void> updateRequest() async {
     if (!_formKey.currentState!.validate()) return;
@@ -56,11 +94,37 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
     });
 
     try {
+      double? latitude = _latitude;
+      double? longitude = _longitude;
+
+      if (latitude == null || longitude == null) {
+        if (_locationController.text.trim().isEmpty) {
+          setState(() => _error = 'Location required');
+          return;
+        }
+
+        try {
+          final loc = await LocationService().getLocationFromAddress(
+            _locationController.text.trim(),
+          );
+
+          latitude = loc.latitude;
+          longitude = loc.longitude;
+        } catch (e) {
+          setState(() => _error = 'Invalid location');
+          return;
+        }
+      }
+
       await _service.updateRequest(widget.request.id, {
         'title': _titleController.text.trim(),
         'category': _categoryController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'location': _locationController.text.trim(),
+        'location': _locationController.text.trim().isEmpty
+            ? null
+            : _locationController.text.trim(),
+        'latitude': latitude,
+        'longitude': longitude,
         'phone': _phoneController.text.trim(),
         'status': RequestStatus.active.name,
       });
@@ -69,7 +133,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Request updated')));
 
-      Navigator.pop(context); // 🔥 retourne à la liste
+      Navigator.pop(context);
     } catch (e) {
       setState(() {
         _error = 'Failed to update request';
@@ -84,7 +148,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Request')),
+      appBar: AppBar(title: const Text('Edit Request')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -136,10 +200,42 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
               TextFormField(
                 controller: _locationController,
                 decoration: const InputDecoration(
-                  labelText: 'Location',
+                  labelText: 'Location (optional)',
                   border: OutlineInputBorder(),
                 ),
               ),
+
+              const SizedBox(height: 12),
+
+              /// BUTTON FOR POSITION
+              ElevatedButton(
+                onPressed: _isLocating ? null : getLocation,
+                child: _isLocating
+                    ? const CircularProgressIndicator()
+                    : const Text('Get your current position'),
+              ),
+
+              ElevatedButton(
+                onPressed: clearLocation,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Remove location'),
+              ),
+
+              // VERIFICATION OF LATITUDE / LONGITUDE
+              if (_latitude != null && _longitude != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.check_circle, color: Colors.green),
+                      SizedBox(width: 8),
+                      Text(
+                        "Position detected",
+                        style: TextStyle(color: Colors.green),
+                      ),
+                    ],
+                  ),
+                ),
 
               const SizedBox(height: 16),
 
