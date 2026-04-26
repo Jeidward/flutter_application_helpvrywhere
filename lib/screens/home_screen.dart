@@ -5,7 +5,8 @@ import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // for logout
 import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
-import 'package:flutter_application_helpvrywhere/services/location_service.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart'; // For overlay window
+import 'package:flutter/services.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -137,7 +138,32 @@ class HomeScreen extends StatelessWidget {
                   icons: Icons.smart_toy,
                   label: "AI tech support",
                   color: Color.fromARGB(228, 148, 223, 255),
-                  onTap: () {},
+                  onTap: () async {
+                    final platform = MethodChannel('app/background');
+
+                    bool granted =
+                        await FlutterOverlayWindow.isPermissionGranted();
+
+                    if (!granted) {
+                      final result =
+                          await FlutterOverlayWindow.requestPermission();
+                      granted = result == true;
+                    }
+
+                    if (granted) {
+                      await FlutterOverlayWindow.showOverlay(
+                        enableDrag: true,
+                        height: 450,
+                        width: 600,
+                        alignment: OverlayAlignment.center,
+                        overlayTitle: "Overlay",
+                        overlayContent: "Running",
+                      );
+                      await Future.delayed(const Duration(milliseconds: 500));
+
+                      await platform.invokeMethod('moveToBackground');
+                    }
+                  },
                 ),
               ],
             ),

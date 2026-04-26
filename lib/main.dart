@@ -7,6 +7,7 @@ import 'package:flutter_application_helpvrywhere/screens/phone_verification_scre
 import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:flutter_application_helpvrywhere/overlay/overlay_ui.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -38,4 +39,11 @@ class MyApp extends StatelessWidget {
       },
     );
   }
+}
+
+@pragma("vm:entry-point")
+void overlayMain() {
+  runApp(
+    const MaterialApp(debugShowCheckedModeBanner: false, home: OverlayUI()),
+  );
 }
