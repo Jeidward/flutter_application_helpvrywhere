@@ -127,7 +127,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     : const Text('Log In'),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+
+              // Forgot password entry point — for users who can't log in
+              TextButton(
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/forgot-password'),
+                child: const Text('Forgot password?'),
+              ),
 
               TextButton(
                 onPressed: () => Navigator.pushReplacementNamed(context, '/register'),

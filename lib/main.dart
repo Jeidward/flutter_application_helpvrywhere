@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/firebase_options.dart';
 import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
 import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/change_password_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/forgot_password_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/phone_verification_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/profile_edit_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -35,6 +38,9 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegistrationScreen(),
         '/verify-phone': (context) => const PhoneVerificationScreen(),
         '/nearby-request': (context) => const RequestMapScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
+        '/profile/edit': (context) => const ProfileEditScreen(),
+        '/profile/change-password': (context) => const ChangePasswordScreen(),
       },
     );
   }
