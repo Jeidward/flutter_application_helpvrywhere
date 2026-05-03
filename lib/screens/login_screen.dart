@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../theme/profile_styles.dart';
+import 'forgot_password_screen.dart';
+import 'registration_screen.dart';
 
 /// Login screen — email/password form.
 /// On success, navigates to HomeScreen.
@@ -67,7 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Log In')),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Log In'),
+        backgroundColor: Colors.white,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -78,10 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: ProfileStyles.inputDecoration('Email'),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter your email';
@@ -94,10 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: ProfileStyles.inputDecoration('Password'),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';
@@ -118,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               ElevatedButton(
                 onPressed: _isLoading ? null : _login,
+                style: ProfileStyles.primary,
                 child: _isLoading
                     ? const SizedBox(
                         height: 20,
@@ -131,13 +133,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Forgot password entry point — for users who can't log in
               TextButton(
-                onPressed: () =>
-                    Navigator.pushNamed(context, '/forgot-password'),
+                onPressed: () => showForgotPasswordDialog(context),
                 child: const Text('Forgot password?'),
               ),
 
               TextButton(
-                onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
+                onPressed: () => showRegistrationDialog(context),
                 child: const Text("Don't have an account? Sign up"),
               ),
             ],
