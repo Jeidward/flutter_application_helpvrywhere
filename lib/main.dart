@@ -6,11 +6,15 @@ import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_application_helpvrywhere/overlay/overlay_ui.dart';
+import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Listen for overlay → main app messages (start/stop speech).
+  print("!!! MAIN APP IS STARTING !!!");
+  SpeechBridge.instance.registerOverlayListener();
   FlutterNativeSplash.remove();
   runApp(const MyApp());
 }
