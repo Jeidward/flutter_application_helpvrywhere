@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../theme/profile_styles.dart';
 import 'phone_verification_screen.dart';
+import 'tutorial_screen.dart';
 
 /// Shows the registration flow as a dialog popup.
 /// On success, optionally launches phone verification dialog.
@@ -90,7 +91,9 @@ class _RegistrationDialogState extends State<_RegistrationDialog> {
         await showPhoneVerificationDialog(context);
       }
 
-      if (mounted) Navigator.pop(context); // close registration dialog
+      if (!mounted) return;
+      Navigator.pop(context); // close registration dialog
+      await showTutorialDialog(context);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = _getErrorMessage(e.code));
     } finally {

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/tutorial_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
@@ -74,6 +75,11 @@ class HomeScreen extends StatelessWidget {
           },
         ),
         actions: [
+          // Help icon — opens onboarding tutorial dialog
+          IconButton(
+            onPressed: () => showTutorialDialog(context),
+            icon: const Icon(Icons.help_outline),
+          ),
           // Profile photo as entry point — opens ProfileDialog
           Padding(
             padding: const EdgeInsets.only(right: 12),
