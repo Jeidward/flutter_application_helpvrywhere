@@ -1,9 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
+import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
-import 'package:flutter_application_helpvrywhere/services/auth_service.dart'; // for logout
+import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart'; // For overlay window
 import 'package:flutter/services.dart';
@@ -73,41 +74,28 @@ class HomeScreen extends StatelessWidget {
           },
         ),
         actions: [
-          IconButton(
-            onPressed: () => _showProfileDialog(context),
-            icon: const Icon(Icons.person),
-          ),
-          IconButton(
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Log out?'),
-                  content: const Text('Are you sure you want to log out?'),
-                  actions: [
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Log Out'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
-                    ),
-                  ],
+          // Profile photo as entry point — opens ProfileDialog
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () => showProfileDialog(context),
+              child: FutureBuilder<UserModel?>(
+                future: AuthService().getUserDocument(
+                  FirebaseAuth.instance.currentUser?.uid ?? '',
                 ),
-              );
-              if (confirm != true) return;
-
-              await AuthService().signOut();
-              if (context.mounted) {
-                Navigator.pushReplacementNamed(context, '/');
-              }
-            },
-            icon: const Icon(Icons.logout),
-          ),
-          IconButton(
-            onPressed: () {},
-            icon: CircleAvatar(backgroundColor: Colors.blueGrey),
+                builder: (context, snapshot) {
+                  final photoUrl = snapshot.data?.photoUrl;
+                  return CircleAvatar(
+                    backgroundColor: Colors.blueGrey.shade100,
+                    backgroundImage:
+                        photoUrl != null ? NetworkImage(photoUrl) : null,
+                    child: photoUrl == null
+                        ? const Icon(Icons.person, color: Colors.blueGrey)
+                        : null,
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -212,49 +200,3 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-Future<void> _showProfileDialog(BuildContext context) async {
-  final authService = AuthService();
-  final uid = FirebaseAuth.instance.currentUser?.uid;
-  if (uid == null) return;
-
-  final user = await authService.getUserDocument(uid);
-  if (!context.mounted || user == null) return;
-
-  final isVerified =
-      user.phoneVerifiedUntil != null &&
-      user.phoneVerifiedUntil!.isAfter(DateTime.now());
-
-  await showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Profile'),
-      content: Text(
-        isVerified
-            ? 'Phone verified until: ${user.phoneVerifiedUntil!.toLocal().toString().split(' ')[0]}'
-            : 'Phone not verified.',
-      ),
-      actions: [
-        if (isVerified)
-          ElevatedButton(
-            onPressed: () async {
-              await authService.unlinkPhone();
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Unlink Phone'),
-          )
-        else
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushNamed(context, '/verify-phone');
-            },
-            child: const Text('Verify Phone'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
-    ),
-  );
-}

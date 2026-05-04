@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/firebase_options.dart';
 import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
 import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
-import 'package:flutter_application_helpvrywhere/screens/phone_verification_screen.dart';
-import 'package:flutter_application_helpvrywhere/screens/registration_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_application_helpvrywhere/overlay/overlay_ui.dart';
@@ -33,8 +31,6 @@ class MyApp extends StatelessWidget {
         '/': (context) =>
             const AuthWrapper(), // was HomeScreen, now checks auth state
         '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegistrationScreen(),
-        '/verify-phone': (context) => const PhoneVerificationScreen(),
         '/nearby-request': (context) => const RequestMapScreen(),
       },
     );
