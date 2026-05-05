@@ -9,6 +9,7 @@ import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart'; // For overlay window
 import 'package:flutter/services.dart';
+import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -145,11 +146,21 @@ class HomeScreen extends StatelessWidget {
                     }
 
                     if (granted) {
+                      // Request mic permission and initialize speech_to_text
+                      // here, while a real Activity context is available.
+                      // The overlay can't do this itself.
+                      await SpeechBridge.instance.requestPermissionAndInit();
+
                       await FlutterOverlayWindow.showOverlay(
-                        enableDrag: true,
-                        height: 450,
-                        width: 600,
-                        alignment: OverlayAlignment.center,
+                        enableDrag: false,
+                        // Raw-pixel height (NOT dp) — see package quirk.
+                        // ~card height + bottom gutter, in raw pixels.
+                        height: 1150,
+                        width: WindowSize.matchParent,
+                        alignment: OverlayAlignment.bottomCenter,
+                        // focusPointer = touches outside the overlay window
+                        // pass through to the app behind (YouTube, home, etc.)
+                        flag: OverlayFlag.focusPointer,
                         overlayTitle: "Overlay",
                         overlayContent: "Running",
                       );
