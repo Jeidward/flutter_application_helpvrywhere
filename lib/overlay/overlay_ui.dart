@@ -41,6 +41,12 @@ class _OverlayUIState extends State<OverlayUI> {
   String _lastWords = '';
   // 0..1 mic amplitude pushed from the main isolate while listening.
   double _soundLevel = 0.0;
+  // True when the user explicitly tapped stop / close. The speech engine
+  // emits several `status` messages while it tears down (sometimes flipping
+  // listening back to true momentarily) which would otherwise trip the
+  // listening->analyzing transition. We ignore the analyzing branch while
+  // this flag is set, and clear it on the next start.
+  bool _userCancelled = false;
 
   @override
   void initState() {
@@ -85,12 +91,10 @@ class _OverlayUIState extends State<OverlayUI> {
           _speechAvailable = data['available'] == true;
           final wasListening = _isListening;
           _isListening = data['listening'] == true;
-          // If listening transitioned true -> false (user stopped speaking
-          // or engine timed out), move into the analyzing state.
-          // The close button locally clears _isListening *before* sending
-          // stop, so by the time its echo arrives wasListening is already
-          // false and this branch correctly does NOT fire.
-          if (wasListening && !_isListening) {
+          // Only auto-flip to "Analyzing" on a real listening->stopped
+          // transition that the user did NOT trigger manually. If the user
+          // tapped stop / close, _userCancelled is set and we stay on Ready.
+          if (wasListening && !_isListening && !_userCancelled) {
             _isAnalyzing = true;
           }
         });
@@ -118,19 +122,19 @@ class _OverlayUIState extends State<OverlayUI> {
       _isAnalyzing = false;
       _lastWords = '';
       _soundLevel = 0.0;
+      _userCancelled = false;
     });
   }
 
   void _stopListening() {
     // Manual stop = user cancelled. Go back to Ready, NOT Analyzing.
-    // We clear _isListening locally first so when the main isolate echoes
-    // back its `status` (listening:false) message, the wasListening->!isListening
-    // branch in _onMessage sees wasListening already false and does not
-    // flip us into the analyzing state.
+    // _userCancelled tells _onMessage to ignore the listening->stopped
+    // status echoes the speech engine emits during teardown.
     setState(() {
       _isListening = false;
       _isAnalyzing = false;
       _soundLevel = 0.0;
+      _userCancelled = true;
     });
     _sendToMain({'type': 'stop'});
   }
@@ -141,6 +145,7 @@ class _OverlayUIState extends State<OverlayUI> {
       _isListening = false;
       _lastWords = '';
       _soundLevel = 0.0;
+      _userCancelled = true;
     });
   }
 
@@ -269,6 +274,7 @@ class _OverlayUIState extends State<OverlayUI> {
                   _isListening = false;
                   _isAnalyzing = false;
                   _lastWords = '';
+                  _userCancelled = true;
                 });
                 _sendToMain({'type': 'stop'});
                 await FlutterOverlayWindow.closeOverlay();
