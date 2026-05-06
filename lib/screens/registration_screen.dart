@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../theme/profile_styles.dart';
+import 'phone_verification_screen.dart';
+import 'tutorial_screen.dart';
 
-/// Registration screen — email, password, username form.
-/// On success, navigates to HomeScreen.
-class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({super.key});
-
-  @override
-  State<RegistrationScreen> createState() => _RegistrationScreenState();
+/// Shows the registration flow as a dialog popup.
+/// On success, optionally launches phone verification dialog.
+Future<void> showRegistrationDialog(BuildContext context) async {
+  await showDialog(
+    context: context,
+    builder: (_) => const _RegistrationDialog(),
+  );
 }
 
-class _RegistrationScreenState extends State<RegistrationScreen> {
+class _RegistrationDialog extends StatefulWidget {
+  const _RegistrationDialog();
+
+  @override
+  State<_RegistrationDialog> createState() => _RegistrationDialogState();
+}
+
+class _RegistrationDialogState extends State<_RegistrationDialog> {
   final _formKey = GlobalKey<FormState>();
   final _authService = AuthService();
 
@@ -47,52 +57,50 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         username: _usernameController.text.trim(),
       );
 
-      if (mounted) {
-        // Ask user if they want to verify phone now or later
-        final verify = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Phone Verification'),
-            content: const Text(
-              'To use help request features (request/accept), '
-              'phone verification is required.\n\n'
-              'Would you like to verify now? '
-              'You can also verify later from your profile.',
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Verify Now'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Later'),
-              ),
-            ],
-          ),
-        );
+      if (!mounted) return;
 
-        if (mounted) {
-          if (verify == true) {
-            Navigator.pushReplacementNamed(context, '/verify-phone');
-          } else {
-            Navigator.pushReplacementNamed(context, '/');
-          }
-        }
+      // Ask user if they want to verify phone now or later
+      final verify = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Phone Verification'),
+          content: const Text(
+            'To use help request features (request/accept), '
+            'phone verification is required.\n\n'
+            'Would you like to verify now? '
+            'You can also verify later from your profile.',
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Verify Now'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Later'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (verify == true) {
+        await showPhoneVerificationDialog(context);
       }
+
+      if (!mounted) return;
+      Navigator.pop(context); // close registration dialog
+      await showTutorialDialog(context);
     } on FirebaseAuthException catch (e) {
-      setState(() {
-        _errorMessage = _getErrorMessage(e.code);
-      });
+      setState(() => _errorMessage = _getErrorMessage(e.code));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Converts Firebase error codes to user-friendly messages
   String _getErrorMessage(String code) {
     switch (code) {
       case 'email-already-in-use':
@@ -108,119 +116,105 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Username field
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Create Account',
+                        style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.bold)),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a username';
-                  }
-                  if (value.trim().length < 3) {
-                    return 'Username must be at least 3 characters';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Email field
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: ProfileStyles.inputDecoration('Username'),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter a username';
+                    }
+                    if (value.trim().length < 3) {
+                      return 'Username must be at least 3 characters';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Password field
-              TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: ProfileStyles.inputDecoration('Email'),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (value) {
-                  if (value == null || value.length < 6) {
-                    return 'Password must be at least 6 characters';
-                  }
-                  // Require at least one special character
-                  if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
-                    return 'Password must contain at least one special character';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Confirm password field
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm Password',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: ProfileStyles.inputDecoration('Password'),
+                  validator: (value) {
+                    if (value == null || value.length < 6) {
+                      return 'Password must be at least 6 characters';
+                    }
+                    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
+                      return 'Password must contain at least one special character';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (value) {
-                  if (value != _passwordController.text) {
-                    return 'Passwords do not match';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // Error message
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: true,
+                  decoration:
+                      ProfileStyles.inputDecoration('Confirm Password'),
+                  validator: (value) {
+                    if (value != _passwordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(_errorMessage!,
+                        style: const TextStyle(color: Colors.red)),
                   ),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _register,
+                  style: ProfileStyles.primary,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create Account'),
                 ),
-
-              // Register button
-              ElevatedButton(
-                onPressed: _isLoading ? null : _register,
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Create Account'),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Navigate to login
-              TextButton(
-                onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-                child: const Text('Already have an account? Log in'),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

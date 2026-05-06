@@ -1,7 +1,8 @@
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 class LocationService {
-  Future<String> getCurrentLocation() async {
+  Future<Position> getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -25,16 +26,27 @@ class LocationService {
         'Location permissions are permanently denied, we cannot request permissions.',
       );
     }
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (e) {
+      throw Exception('Failed to get location: $e');
+    }
+  }
 
-    // If permissions are granted, get the current position
-    return await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        )
-        .then((Position position) {
-          return 'Latitude: ${position.latitude}, Longitude: ${position.longitude}';
-        })
-        .catchError((e) {
-          throw Exception('Failed to get location: $e');
-        });
+  // Get latitude / longitude with the address string
+  Future<Location> getLocationFromAddress(String address) async {
+    try {
+      final locations = await locationFromAddress(address);
+
+      if (locations.isEmpty) {
+        throw Exception('No location found for this address');
+      }
+
+      return locations.first;
+    } catch (e) {
+      throw Exception('Failed to get location from address: $e');
+    }
   }
 }

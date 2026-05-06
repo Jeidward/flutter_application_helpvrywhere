@@ -124,7 +124,40 @@ class AuthService {
 
   // ─── Profile ─────────────────────────────────────────────────────────────
 
-  // TODO: implement profile update, password change, password reset (donghwan/feature/profile)
+  /// Updates user profile fields (username, photoUrl) in Firestore.
+  Future<void> updateProfile({String? username, String? photoUrl}) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    final updates = <String, dynamic>{};
+    if (username != null) updates['username'] = username;
+    if (photoUrl != null) updates['photoUrl'] = photoUrl;
+    if (updates.isEmpty) return;
+    await _db.collection('users').doc(uid).update(updates);
+  }
+
+  /// Changes password for currently signed-in user.
+  /// Requires recent login — throws FirebaseAuthException with code
+  /// 'requires-recent-login' if user needs to re-authenticate first.
+  Future<void> updatePassword(String newPassword) async {
+    await _auth.currentUser?.updatePassword(newPassword);
+  }
+
+  /// Re-authenticates with current password (needed before sensitive
+  /// operations like password change or email change).
+  Future<void> reauthenticate(String currentPassword) async {
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) return;
+    final credential = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+    await user.reauthenticateWithCredential(credential);
+  }
+
+  /// Sends password reset email — used when user is logged out.
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _auth.sendPasswordResetEmail(email: email);
+  }
 
   // ─── Firestore helpers ───────────────────────────────────────────────────
 
