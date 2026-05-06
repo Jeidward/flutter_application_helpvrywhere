@@ -39,6 +39,8 @@ class _OverlayUIState extends State<OverlayUI> {
   bool _isListening = false;
   bool _isAnalyzing = false;
   String _lastWords = '';
+  // 0..1 mic amplitude pushed from the main isolate while listening.
+  double _soundLevel = 0.0;
 
   @override
   void initState() {
@@ -98,6 +100,13 @@ class _OverlayUIState extends State<OverlayUI> {
           _lastWords = (data['text'] as String?) ?? '';
         });
         break;
+      case 'level':
+        final raw = (data['level'] as num?)?.toDouble() ?? 0.0;
+        setState(() {
+          // Light smoothing so the dot doesn't jitter frame-to-frame.
+          _soundLevel = _soundLevel * 0.5 + raw.clamp(0.0, 1.0) * 0.5;
+        });
+        break;
     }
   }
 
@@ -108,15 +117,22 @@ class _OverlayUIState extends State<OverlayUI> {
       _isListening = true;
       _isAnalyzing = false;
       _lastWords = '';
+      _soundLevel = 0.0;
     });
   }
 
   void _stopListening() {
-    _sendToMain({'type': 'stop'});
+    // Manual stop = user cancelled. Go back to Ready, NOT Analyzing.
+    // We clear _isListening locally first so when the main isolate echoes
+    // back its `status` (listening:false) message, the wasListening->!isListening
+    // branch in _onMessage sees wasListening already false and does not
+    // flip us into the analyzing state.
     setState(() {
       _isListening = false;
-      _isAnalyzing = true;
+      _isAnalyzing = false;
+      _soundLevel = 0.0;
     });
+    _sendToMain({'type': 'stop'});
   }
 
   void _resetToReady() {
@@ -124,6 +140,7 @@ class _OverlayUIState extends State<OverlayUI> {
       _isAnalyzing = false;
       _isListening = false;
       _lastWords = '';
+      _soundLevel = 0.0;
     });
   }
 
@@ -179,7 +196,7 @@ class _OverlayUIState extends State<OverlayUI> {
       key: const ValueKey('listening-card'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ListeningIndicator(active: _isListening),
+        _ListeningIndicator(active: _isListening, level: _soundLevel),
         const SizedBox(height: 12),
         Text(
           title,
@@ -309,9 +326,12 @@ class _OverlayUIState extends State<OverlayUI> {
 /// ring that expands outward and fades — gives a "live, listening" feel.
 /// Pulse only runs when [active] is true; otherwise it sits still.
 class _ListeningIndicator extends StatefulWidget {
-  const _ListeningIndicator({required this.active});
+  const _ListeningIndicator({required this.active, this.level = 0.0});
 
   final bool active;
+  // 0..1 mic amplitude. Drives an extra "voice bump" on top of the
+  // baseline breathe animation while the user is speaking.
+  final double level;
 
   @override
   State<_ListeningIndicator> createState() => _ListeningIndicatorState();
@@ -359,10 +379,18 @@ class _ListeningIndicatorState extends State<_ListeningIndicator>
         animation: _controller,
         builder: (context, _) {
           final t = Curves.easeOut.transform(_controller.value);
-          final rippleSize = baseSize + (maxRipple - baseSize) * t;
-          final rippleOpacity = widget.active ? (1 - t) * 0.55 : 0.0;
+          // Mic-driven boost: ripple grows bigger and stays brighter when
+          // the user is louder. level is already smoothed in the parent.
+          final lvl = widget.active ? widget.level.clamp(0.0, 1.0) : 0.0;
+          final rippleSize =
+              baseSize + (maxRipple - baseSize) * t * (0.4 + 0.6 * lvl);
+          final rippleOpacity =
+              widget.active ? (1 - t) * (0.25 + 0.6 * lvl) : 0.0;
+          // Baseline breathe + extra punch from the user's voice.
           final breathe = widget.active
-              ? 1.0 + 0.08 * (1 - (2 * _controller.value - 1).abs())
+              ? 1.0 +
+                  0.08 * (1 - (2 * _controller.value - 1).abs()) +
+                  0.35 * lvl
               : 1.0;
           return Stack(
             alignment: Alignment.center,

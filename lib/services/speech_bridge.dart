@@ -96,7 +96,10 @@ class SpeechBridge {
           final ok = await requestPermissionAndInit();
           if (!ok) return;
         }
-        await _stt.listen(onResult: _onResult);
+        await _stt.listen(
+          onResult: _onResult,
+          onSoundLevelChange: _onSoundLevel,
+        );
         _send({'type': 'status', 'listening': true, 'available': true});
         break;
       case 'stop':
@@ -113,6 +116,18 @@ class SpeechBridge {
       'text': result.recognizedWords,
       'final': result.finalResult,
     });
+  }
+
+  /// Forward mic amplitude to the overlay so the listening indicator can
+  /// react to the user's voice. speech_to_text reports a roughly -2..10 dB
+  /// range (platform-dependent); we normalize to 0..1 here so the overlay
+  /// doesn't have to know the underlying scale.
+  void _onSoundLevel(double level) {
+    const minLevel = -2.0;
+    const maxLevel = 10.0;
+    final normalized =
+        ((level - minLevel) / (maxLevel - minLevel)).clamp(0.0, 1.0);
+    _send({'type': 'level', 'level': normalized});
   }
 
   void _send(Map<String, dynamic> data) {
