@@ -28,7 +28,13 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'HelpEverywhere',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme:
+            ColorScheme.fromSeed(
+              seedColor: const Color.fromARGB(255, 91, 167, 217),
+            ).copyWith(
+              secondary: const Color(0xFF6FCF97),
+              tertiary: const Color(0xFFFFC857),
+            ),
       ),
       initialRoute: '/',
       routes: {
