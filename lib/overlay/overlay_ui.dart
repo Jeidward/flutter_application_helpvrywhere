@@ -56,22 +56,16 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
   // ── Speech state ───────────────────────────────────────────────────────────
   bool _speechAvailable = true;
   bool _isListening = false;
-  String _lastWords = '';
-  bool _didSendAnalyze = false;
-  double _soundLevel = 0.0;
-
-  // ── AI guidance state ──────────────────────────────────────────────────────
   bool _isAnalyzing = false;
-  String _currentInstruction = '';
-  _Highlight? _highlight;
-  bool _isComplete = false;
-  int _stepNumber = 1;
-
-  // ── UI state ───────────────────────────────────────────────────────────────
-  bool _isMinimized = false;
-  // Renders the overlay completely invisible while the main app captures a
-  // clean screenshot. Toggled via 'hide' / 'analyzing' messages.
-  bool _hidden = false;
+  String _lastWords = '';
+  // 0..1 mic amplitude pushed from the main isolate while listening.
+  double _soundLevel = 0.0;
+  // True when the user explicitly tapped stop / close. The speech engine
+  // emits several `status` messages while it tears down (sometimes flipping
+  // listening back to true momentarily) which would otherwise trip the
+  // listening->analyzing transition. We ignore the analyzing branch while
+  // this flag is set, and clear it on the next start.
+  bool _userCancelled = false;
 
   // ── Pulsing highlight animation ────────────────────────────────────────────
   late final AnimationController _highlightAnim;
@@ -95,9 +89,11 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
     print('!!! OVERLAY: Registering overlay port NOW !!!');
     IsolateNameServer.removePortNameMapping(_overlayPortName);
     final port = ReceivePort();
-    final ok =
-        IsolateNameServer.registerPortWithName(port.sendPort, _overlayPortName);
-    print('!!! OVERLAY: Port registration result: $ok !!!');
+    final ok = IsolateNameServer.registerPortWithName(
+      port.sendPort,
+      _overlayPortName,
+    );
+    print("!!! OVERLAY: Port registration result: $ok !!!");
     _port = port;
     port.listen((data) {
       if (data is Map) _onMessage(Map<String, dynamic>.from(data));
@@ -137,7 +133,14 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
         final nowListening = data['listening'] == true;
         setState(() {
           _speechAvailable = data['available'] == true;
-          _isListening = nowListening;
+          final wasListening = _isListening;
+          _isListening = data['listening'] == true;
+          // Only auto-flip to "Analyzing" on a real listening->stopped
+          // transition that the user did NOT trigger manually. If the user
+          // tapped stop / close, _userCancelled is set and we stay on Ready.
+          if (wasListening && !_isListening && !_userCancelled) {
+            _isAnalyzing = true;
+          }
         });
         // Fallback only: if the listener stopped but no `final:true` words
         // event arrived within ~1.5s, fire with whatever we have. The primary
@@ -186,51 +189,13 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
           _highlight = null;
         });
         break;
-
-      // ── Temporarily hide the overlay so the screenshot captures the
-      //    user's app cleanly (no AI assistant card on top). The next
-      //    'analyzing' / 'ai_step' / 'ai_error' message will un-hide it.
-      case 'hide':
-        setState(() => _hidden = true);
-        break;
-
-      // ── AI returned a guidance step ────────────────────────────────────────
-      case 'ai_step':
-        final h = data['highlight'];
-        final screenW = (data['screen_width'] as num?)?.toDouble() ?? 0;
-        final screenH = (data['screen_height'] as num?)?.toDouble() ?? 0;
+      case 'level':
+        final raw = (data['level'] as num?)?.toDouble() ?? 0.0;
         setState(() {
-          _hidden = false; // overlay must be visible to show the result
-          _isAnalyzing = false;
-          _currentInstruction = (data['instruction'] as String?) ?? '';
-          _stepNumber = (data['step_number'] as int?) ?? 1;
-          _isComplete = data['is_complete'] == true;
-          _highlight = (h is Map && screenW > 0 && screenH > 0)
-              ? _Highlight(
-                  x: (h['x'] as num).toDouble(),
-                  y: (h['y'] as num).toDouble(),
-                  w: (h['w'] as num).toDouble(),
-                  h: (h['h'] as num).toDouble(),
-                  screenWidth: screenW,
-                  screenHeight: screenH,
-                )
-              : null;
-          _isMinimized = false;
+          // Light smoothing so the dot doesn't jitter frame-to-frame.
+          _soundLevel = _soundLevel * 0.5 + raw.clamp(0.0, 1.0) * 0.5;
         });
         break;
-
-      // ── AI error ───────────────────────────────────────────────────────────
-      case 'ai_error':
-        setState(() {
-          _hidden = false; // ensure overlay is visible to show the error
-          _isAnalyzing = false;
-          _currentInstruction =
-              (data['message'] as String?) ?? 'Something went wrong. Please try again.';
-          _highlight = null;
-          _isComplete = false;
-        });
-        break;
-
     }
   }
 
@@ -241,19 +206,34 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
     _sendToMain({'type': 'start'});
     setState(() {
       _isListening = true;
-      _didSendAnalyze = false;
+      _isAnalyzing = false;
       _lastWords = '';
-      _currentInstruction = '';
-      _highlight = null;
-      _isComplete = false;
+      _soundLevel = 0.0;
+      _userCancelled = false;
     });
   }
 
   void _stopListening() {
-    // Don't send `analyze` here — the `status` handler does it the moment the
-    // listener actually transitions to not-listening. That handles BOTH manual
-    // stop AND auto-stop on silence consistently.
+    // Manual stop = user cancelled. Go back to Ready, NOT Analyzing.
+    // _userCancelled tells _onMessage to ignore the listening->stopped
+    // status echoes the speech engine emits during teardown.
+    setState(() {
+      _isListening = false;
+      _isAnalyzing = false;
+      _soundLevel = 0.0;
+      _userCancelled = true;
+    });
     _sendToMain({'type': 'stop'});
+  }
+
+  void _resetToReady() {
+    setState(() {
+      _isAnalyzing = false;
+      _isListening = false;
+      _lastWords = '';
+      _soundLevel = 0.0;
+      _userCancelled = true;
+    });
   }
 
   // ── Window size helpers ────────────────────────────────────────────────────
@@ -296,15 +276,6 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    // While hidden (during screenshot capture), draw nothing — the underlying
-    // app should be visible and the screenshot should be clean.
-    if (_hidden) {
-      return const Material(color: Colors.transparent);
-    }
-
-    final showHighlight =
-        _highlight != null && !_highlight!.isEmpty && !_isMinimized;
-
     return Material(
       color: Colors.transparent,
       child: Stack(
@@ -321,352 +292,154 @@ class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
                   ),
                 ),
               ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _isAnalyzing
+                    ? _buildAnalyzingCard()
+                    : _buildListeningCard(),
+              ),
             ),
-
-          // ── Card / pill ────────────────────────────────────────────────────
-          if (_isMinimized)
-            _buildMinimizedPill()
-          else if (_isAnalyzing)
-            _buildAnalyzingCard()
-          else if (_currentInstruction.isNotEmpty)
-            _buildResultCard()
-          else
-            _buildListeningCard(),
+          ),
         ],
       ),
     );
   }
 
-  // ── Minimized pill ─────────────────────────────────────────────────────────
-
-  Widget _buildMinimizedPill() {
-    // Padding superior para no quedar tapado por el status bar de Android.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 36, 10, 10),
-      child: GestureDetector(
-        onTap: _expand,
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: BoxDecoration(
-            color: OverlayUI.blue,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.30),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.assistant, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text(
-                'HelpVrywhere',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Listening card ─────────────────────────────────────────────────────────
-
   Widget _buildListeningCard() {
-    final hasTranscript = _lastWords.isNotEmpty;
     final title = _isListening ? 'Listening...' : 'Ready';
+    final hasTranscript = _lastWords.isNotEmpty;
     final placeholder = !_speechAvailable
         ? 'Speech unavailable'
         : _isListening
-            ? 'Tell me what you need help with'
-            : 'Tap the mic to start';
+        ? 'Tell me what you need help with'
+        : 'Tap the mic to start';
 
-    return Positioned(
-      left: 12,
-      right: 12,
-      bottom: OverlayUI._bottomGutter,
-      child: _card(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ListeningIndicator(active: _isListening, level: _soundLevel),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 52),
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: hasTranscript
-                      ? Padding(
-                          key: const ValueKey('transcript'),
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
-                            '"${_lastWords.trim()}"',
-                            textAlign: TextAlign.center,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              height: 1.3,
-                              color: Color(0xFF1F2937),
-                              fontStyle: FontStyle.italic,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        )
-                      : Text(
-                          placeholder,
-                          key: ValueKey('placeholder:$placeholder'),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            color: OverlayUI._textMuted,
-                          ),
-                        ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _CircleButton(
-                  color: OverlayUI._graySoft,
-                  iconColor: const Color(0xFF6B7280),
-                  icon: Icons.remove,
-                  onTap: _minimize,
-                ),
-                const SizedBox(width: 14),
-                _CircleButton(
-                  color: _isListening
-                      ? OverlayUI._pinkSoft
-                      : OverlayUI._greenSoft,
-                  iconColor: OverlayUI.blue,
-                  icon: _isListening ? Icons.stop : Icons.mic,
-                  onTap: _isListening ? _stopListening : _startListening,
-                ),
-                const SizedBox(width: 14),
-                _CircleButton(
-                  color: OverlayUI._pinkSoft,
-                  iconColor: const Color(0xFFC2453A),
-                  icon: Icons.close,
-                  onTap: () async {
-                    _sendToMain({'type': 'stop'});
-                    await FlutterOverlayWindow.closeOverlay();
-                  },
-                ),
-              ],
-            ),
-          ],
+    return Column(
+      key: const ValueKey('listening-card'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ListeningIndicator(active: _isListening, level: _soundLevel),
+        const SizedBox(height: 12),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
         ),
-      ),
-    );
-  }
-
-  // ── Analyzing card ─────────────────────────────────────────────────────────
-
-  Widget _buildAnalyzingCard() {
-    return Positioned(
-      left: 12,
-      right: 12,
-      bottom: OverlayUI._bottomGutter,
-      child: _card(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            const SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(OverlayUI.blue),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Analyzing screen...',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Step $_stepNumber — Looking at what\'s on screen',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                color: OverlayUI._textMuted,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Result card ────────────────────────────────────────────────────────────
-
-  Widget _buildResultCard() {
-    return Positioned(
-      left: 12,
-      right: 12,
-      bottom: OverlayUI._bottomGutter,
-      child: _card(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header: step badge + minimize + close
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: OverlayUI.blueSoft,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _isComplete ? '✓ Done' : 'Step $_stepNumber',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: OverlayUI.blue,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                _CircleButton(
-                  color: OverlayUI._graySoft,
-                  iconColor: const Color(0xFF6B7280),
-                  icon: Icons.remove,
-                  onTap: _minimize,
-                ),
-                const SizedBox(width: 8),
-                _CircleButton(
-                  color: OverlayUI._pinkSoft,
-                  iconColor: const Color(0xFFC2453A),
-                  icon: Icons.close,
-                  onTap: () async {
-                    _sendToMain({'type': 'stop'});
-                    await FlutterOverlayWindow.closeOverlay();
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Instruction text
-            Text(
-              _currentInstruction,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.4,
-                color: Color(0xFF1F2937),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Action buttons
-            if (_isComplete) ...[
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    _sendToMain({'type': 'stop'});
-                    await FlutterOverlayWindow.closeOverlay();
-                  },
-                  icon:
-                      const Icon(Icons.check_circle_outline, size: 18),
-                  label: const Text('Close Assistant'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: OverlayUI._greenSoft,
-                    foregroundColor: const Color(0xFF22863A),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ] else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _onNextStep,
-                      icon: const Icon(Icons.arrow_forward, size: 16),
-                      label: const Text('I did it → Next'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: OverlayUI.blue,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+        const SizedBox(height: 6),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: hasTranscript
+                  ? Padding(
+                      key: const ValueKey('transcript'),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        '“${_lastWords.trim()}”',
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          height: 1.3,
+                          color: Color(0xFF1F2937),
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w500,
                         ),
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    )
+                  : Text(
+                      placeholder,
+                      key: ValueKey('placeholder:$placeholder'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: OverlayUI._textMuted,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  _CircleButton(
-                    color: OverlayUI._graySoft,
-                    iconColor: const Color(0xFF6B7280),
-                    icon: Icons.mic,
-                    onTap: _onNewQuestion,
-                  ),
-                ],
-              ),
-            ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _CircleButton(
+              color: OverlayUI._graySoft,
+              iconColor: const Color(0xFF6B7280),
+              icon: Icons.remove,
+              onTap: () => FlutterOverlayWindow.shareData({'type': 'minimize'}),
+            ),
+            const SizedBox(width: 14),
+            _CircleButton(
+              color: _isListening ? OverlayUI._pinkSoft : OverlayUI._greenSoft,
+              iconColor: OverlayUI.blue,
+              icon: _isListening ? Icons.stop : Icons.mic,
+              onTap: _isListening ? _stopListening : _startListening,
+            ),
+            const SizedBox(width: 14),
+            _CircleButton(
+              color: OverlayUI._pinkSoft,
+              iconColor: const Color(0xFFC2453A),
+              icon: Icons.close,
+              onTap: () async {
+                setState(() {
+                  _isListening = false;
+                  _isAnalyzing = false;
+                  _lastWords = '';
+                  _userCancelled = true;
+                });
+                _sendToMain({'type': 'stop'});
+                await FlutterOverlayWindow.closeOverlay();
+              },
+            ),
           ],
         ),
-      ),
+      ],
     );
   }
 
-  // ── Card container helper ──────────────────────────────────────────────────
-
-  Widget _card({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEAECEF)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+  Widget _buildAnalyzingCard() {
+    return Padding(
+      key: const ValueKey('analyzing-card'),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const _AnalyzingDots(),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'Looking at your screen',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Analyzing what you need help with',
+                  style: TextStyle(fontSize: 13, color: OverlayUI._textMuted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _CircleButton(
+            color: OverlayUI._graySoft,
+            iconColor: const Color(0xFF6B7280),
+            icon: Icons.arrow_back,
+            onTap: _resetToReady,
           ),
         ],
       ),
@@ -782,7 +555,9 @@ class _ListeningIndicator extends StatefulWidget {
   const _ListeningIndicator({required this.active, this.level = 0.0});
 
   final bool active;
-  final double level; // 0.0–1.0, drives the extra ripple boost
+  // 0..1 mic amplitude. Drives an extra "voice bump" on top of the
+  // baseline breathe animation while the user is speaking.
+  final double level;
 
   @override
   State<_ListeningIndicator> createState() => _ListeningIndicatorState();
@@ -832,11 +607,18 @@ class _ListeningIndicatorState extends State<_ListeningIndicator>
         animation: _controller,
         builder: (context, _) {
           final t = Curves.easeOut.transform(_controller.value);
+          // Mic-driven boost: ripple grows bigger and stays brighter when
+          // the user is louder. level is already smoothed in the parent.
+          final lvl = widget.active ? widget.level.clamp(0.0, 1.0) : 0.0;
           final rippleSize =
-              baseSize + (maxRipple - baseSize) * t + levelBoost;
-          final rippleOpacity = widget.active ? (1 - t) * 0.55 : 0.0;
+              baseSize + (maxRipple - baseSize) * t * (0.4 + 0.6 * lvl);
+          final rippleOpacity =
+              widget.active ? (1 - t) * (0.25 + 0.6 * lvl) : 0.0;
+          // Baseline breathe + extra punch from the user's voice.
           final breathe = widget.active
-              ? 1.0 + 0.08 * (1 - (2 * _controller.value - 1).abs())
+              ? 1.0 +
+                  0.08 * (1 - (2 * _controller.value - 1).abs()) +
+                  0.35 * lvl
               : 1.0;
           return Stack(
             alignment: Alignment.center,
@@ -877,7 +659,77 @@ class _ListeningIndicatorState extends State<_ListeningIndicator>
   }
 }
 
-// ── Circle button ──────────────────────────────────────────────────────────
+/// Three blue dots that pulse in a wave — used while the assistant is
+/// "analyzing the screen". Pure visual: no work is actually being done here,
+/// the screenshot/agent wiring lives elsewhere.
+class _AnalyzingDots extends StatefulWidget {
+  const _AnalyzingDots();
+
+  @override
+  State<_AnalyzingDots> createState() => _AnalyzingDotsState();
+}
+
+class _AnalyzingDotsState extends State<_AnalyzingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                // Stagger each dot by 1/3 of the loop.
+                final phase = (_controller.value - i * 0.18) % 1.0;
+                final wave = (phase < 0.5)
+                    ? phase * 2
+                    : (1 - phase) * 2; // 0 -> 1 -> 0
+                final eased = Curves.easeInOut.transform(wave.clamp(0.0, 1.0));
+                final scale = 0.7 + 0.5 * eased;
+                final opacity = 0.35 + 0.65 * eased;
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: i == 1 ? 3 : 2),
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: OverlayUI.blue.withOpacity(opacity),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 
 class _CircleButton extends StatelessWidget {
   const _CircleButton({

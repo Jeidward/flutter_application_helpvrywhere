@@ -24,6 +24,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
 
   double? _latitude;
   double? _longitude;
+  DateTime? _selectedDateTime;
 
   bool _isLoading = false;
   bool _isLocating = false;
@@ -41,6 +42,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
     _phoneController.text = widget.request.phone;
     _latitude = widget.request.latitude;
     _longitude = widget.request.longitude;
+    _selectedDateTime = widget.request.dateTime;
   }
 
   @override
@@ -81,6 +83,36 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
       _latitude = null;
       _longitude = null;
       _locationController.clear();
+    });
+  }
+
+  Future<void> _pickDateTime() async {
+    final now = DateTime.now();
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 2),
+    );
+
+    if (pickedDate == null) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+
+    if (pickedTime == null) return;
+
+    setState(() {
+      _selectedDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
     });
   }
 
@@ -125,6 +157,7 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
             : _locationController.text.trim(),
         'latitude': latitude,
         'longitude': longitude,
+        'dateTime': _selectedDateTime ?? DateTime.now(),
         'phone': _phoneController.text.trim(),
         'status': RequestStatus.active.name,
       });
@@ -236,6 +269,37 @@ class _RequestEditScreenState extends State<RequestEditScreen> {
                     ],
                   ),
                 ),
+
+              const SizedBox(height: 16),
+
+              // DATETIME
+              TextFormField(
+                readOnly: true,
+                controller: TextEditingController(
+                  text: _selectedDateTime == null
+                      ? 'Right now'
+                      : '${_selectedDateTime!.day}/${_selectedDateTime!.month}/${_selectedDateTime!.year} '
+                            '${_selectedDateTime!.hour.toString().padLeft(2, '0')}:'
+                            '${_selectedDateTime!.minute.toString().padLeft(2, '0')}',
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Request date & time',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                onTap: _pickDateTime,
+              ),
+
+              const SizedBox(height: 8),
+
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedDateTime = null;
+                  });
+                },
+                child: const Text('Right now'),
+              ),
 
               const SizedBox(height: 16),
 

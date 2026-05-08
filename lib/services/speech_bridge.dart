@@ -135,21 +135,9 @@ class SpeechBridge {
           final ok = await requestPermissionAndInit();
           if (!ok) return;
         }
-        // Reset guidance session when the user starts a new recording
-        _currentGoal = '';
-        _currentStep = 1;
-
-        // Long listen/pause durations so the mic does NOT auto-stop after a
-        // moment of silence — the user controls when to stop by tapping the
-        // mic button again.
         await _stt.listen(
           onResult: _onResult,
           onSoundLevelChange: _onSoundLevel,
-          listenFor: const Duration(minutes: 10),
-          pauseFor: const Duration(minutes: 5),
-          partialResults: true,
-          cancelOnError: false,
-          listenMode: ListenMode.dictation,
         );
         _send({'type': 'status', 'listening': true, 'available': true});
         break;
@@ -323,18 +311,17 @@ class SpeechBridge {
     });
   }
 
-  /// Normalises the raw mic amplitude (-2 … 10 dB) to 0.0–1.0 and forwards
-  /// it to the overlay so the listening indicator can pulse with the user's voice.
+  /// Forward mic amplitude to the overlay so the listening indicator can
+  /// react to the user's voice. speech_to_text reports a roughly -2..10 dB
+  /// range (platform-dependent); we normalize to 0..1 here so the overlay
+  /// doesn't have to know the underlying scale.
   void _onSoundLevel(double level) {
-    const minDb = -2.0;
-    const maxDb = 10.0;
-    final normalized = ((level - minDb) / (maxDb - minDb)).clamp(0.0, 1.0);
+    const minLevel = -2.0;
+    const maxLevel = 10.0;
+    final normalized =
+        ((level - minLevel) / (maxLevel - minLevel)).clamp(0.0, 1.0);
     _send({'type': 'level', 'level': normalized});
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Port send helper
-  // ─────────────────────────────────────────────────────────────────────────
 
   void _send(Map<String, dynamic> data) {
     final overlayPort = IsolateNameServer.lookupPortByName(overlayPortName);
