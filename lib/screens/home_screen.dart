@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
+import 'package:flutter_application_helpvrywhere/screens/ai_guide_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/tutorial_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart';

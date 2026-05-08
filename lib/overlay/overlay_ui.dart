@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:isolate';
 import 'dart:ui';
 
@@ -11,7 +10,29 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 const String _mainPortName = 'speech_bridge.main';
 const String _overlayPortName = 'speech_bridge.overlay';
 
-/// Change this file to change the overlay
+// ── Local highlight data ─────────────────────────────────────────────────────
+// Mirrors HighlightRect in ai_service.dart. Duplicated to avoid importing
+// Firebase/permission_handler into the overlay isolate.
+//
+// (x, y, w, h) are FRACTIONS OF THE FULL SCREEN — they come from Gemini, which
+// saw the entire screenshot. The painter converts them to the overlay's local
+// coordinate space using `screenWidth` / `screenHeight`.
+class _Highlight {
+  final double x, y, w, h;
+  final double screenWidth;  // logical px of the full device screen
+  final double screenHeight; // logical px of the full device screen
+  const _Highlight({
+    required this.x,
+    required this.y,
+    required this.w,
+    required this.h,
+    required this.screenWidth,
+    required this.screenHeight,
+  });
+  bool get isEmpty => w == 0 && h == 0;
+}
+
+// ── Root widget ──────────────────────────────────────────────────────────────
 class OverlayUI extends StatefulWidget {
   const OverlayUI({super.key});
 
@@ -28,13 +49,11 @@ class OverlayUI extends StatefulWidget {
   State<OverlayUI> createState() => _OverlayUIState();
 }
 
-class _OverlayUIState extends State<OverlayUI> {
-  // The overlay can't run speech_to_text itself (no Activity context).
-  // The flutter_overlay_window 0.4.5 channel only works main→overlay
-  // (overlay→main is silently dropped), so we use IsolateNameServer
-  // ports for both directions instead.
+class _OverlayUIState extends State<OverlayUI> with TickerProviderStateMixin {
+  // ── IsolateNameServer port ─────────────────────────────────────────────────
   ReceivePort? _port;
 
+  // ── Speech state ───────────────────────────────────────────────────────────
   bool _speechAvailable = true;
   bool _isListening = false;
   bool _isAnalyzing = false;
@@ -48,10 +67,26 @@ class _OverlayUIState extends State<OverlayUI> {
   // this flag is set, and clear it on the next start.
   bool _userCancelled = false;
 
+  // ── Pulsing highlight animation ────────────────────────────────────────────
+  late final AnimationController _highlightAnim;
+  late final Animation<double> _pulseAnim;
+
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    print("!!! OVERLAY: Registering overlay port NOW !!!");
+
+    // Pulsing border for the spotlight highlight
+    _highlightAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _highlightAnim, curve: Curves.easeInOut),
+    );
+
+    // Register the overlay's receive port
+    print('!!! OVERLAY: Registering overlay port NOW !!!');
     IsolateNameServer.removePortNameMapping(_overlayPortName);
     final port = ReceivePort();
     final ok = IsolateNameServer.registerPortWithName(
@@ -67,26 +102,35 @@ class _OverlayUIState extends State<OverlayUI> {
 
   @override
   void dispose() {
+    _highlightAnim.dispose();
     _port?.close();
     IsolateNameServer.removePortNameMapping(_overlayPortName);
     super.dispose();
   }
 
+  // ── Port helpers ───────────────────────────────────────────────────────────
+
   void _sendToMain(Map<String, dynamic> data) {
     final mainPort = IsolateNameServer.lookupPortByName(_mainPortName);
     if (mainPort == null) {
-      print("!!! OVERLAY: main port not found, dropping $data !!!");
+      print('!!! OVERLAY: main port not found, dropping $data !!!');
       return;
     }
     mainPort.send(data);
   }
 
+  // ── Message handler ────────────────────────────────────────────────────────
+
   void _onMessage(Map<String, dynamic> data) {
-    print("!!! OVERLAY RECEIVED DATA: $data !!!");
+    print('!!! OVERLAY RECEIVED DATA: $data !!!');
     final type = data['type'];
     if (!mounted) return;
+
     switch (type) {
+      // ── Speech status ──────────────────────────────────────────────────────
       case 'status':
+        final wasListening = _isListening;
+        final nowListening = data['listening'] == true;
         setState(() {
           _speechAvailable = data['available'] == true;
           final wasListening = _isListening;
@@ -98,10 +142,51 @@ class _OverlayUIState extends State<OverlayUI> {
             _isAnalyzing = true;
           }
         });
+        // Fallback only: if the listener stopped but no `final:true` words
+        // event arrived within ~1.5s, fire with whatever we have. The primary
+        // trigger lives in the 'words' case below — that's the one that
+        // catches the FULL recognized phrase.
+        if (wasListening && !nowListening) {
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (!mounted) return;
+            if (_lastWords.trim().isNotEmpty && !_didSendAnalyze) {
+              _didSendAnalyze = true;
+              _sendToMain({'type': 'analyze', 'text': _lastWords.trim()});
+            }
+          });
+        }
         break;
+
+      // ── Interim / final speech words ───────────────────────────────────────
       case 'words':
+        final text = (data['text'] as String?) ?? '';
+        final isFinal = data['final'] == true;
+        setState(() => _lastWords = text);
+        // FINAL words = STT has fully recognized the phrase. Fire analyze NOW
+        // with the complete text instead of waiting for the status change
+        // (which often fires before `final:true` arrives).
+        if (isFinal && text.trim().isNotEmpty && !_didSendAnalyze) {
+          _didSendAnalyze = true;
+          _sendToMain({'type': 'analyze', 'text': text.trim()});
+        }
+        break;
+
+      // ── Mic amplitude (0.0–1.0) ───────────────────────────────────────────
+      case 'level':
         setState(() {
-          _lastWords = (data['text'] as String?) ?? '';
+          _soundLevel = (data['level'] as num?)?.toDouble() ?? 0.0;
+        });
+        break;
+
+      // ── AI call in progress ────────────────────────────────────────────────
+      case 'analyzing':
+        setState(() {
+          _isAnalyzing = true;
+          _hidden = false; // bring overlay back if it was hidden for screenshot
+          _isMinimized = false;
+          _stepNumber = (data['step'] as int?) ?? _stepNumber;
+          _currentInstruction = '';
+          _highlight = null;
         });
         break;
       case 'level':
@@ -113,6 +198,8 @@ class _OverlayUIState extends State<OverlayUI> {
         break;
     }
   }
+
+  // ── Speech controls ────────────────────────────────────────────────────────
 
   void _startListening() {
     print("OVERLAY: Sending 'start' command to Main App...");
@@ -149,29 +236,61 @@ class _OverlayUIState extends State<OverlayUI> {
     });
   }
 
+  // ── Window size helpers ────────────────────────────────────────────────────
+
+  // Solo encogemos / agrandamos el overlay existente. Sin close/reopen.
+  Future<void> _minimize() async {
+    setState(() => _isMinimized = true);
+    await FlutterOverlayWindow.resizeOverlay(140, 320, true);
+  }
+
+  Future<void> _expand() async {
+    await FlutterOverlayWindow.resizeOverlay(1150, WindowSize.matchParent, true);
+    setState(() => _isMinimized = false);
+  }
+
+  // ── AI guidance actions ────────────────────────────────────────────────────
+
+  void _onNextStep() {
+    setState(() {
+      _currentInstruction = '';
+      _highlight = null;
+      _isAnalyzing = true;
+    });
+    _sendToMain({'type': 'next_step'});
+  }
+
+  void _onNewQuestion() {
+    setState(() {
+      _currentInstruction = '';
+      _highlight = null;
+      _isComplete = false;
+      _lastWords = '';
+      _isAnalyzing = false;
+      _didSendAnalyze = false;
+    });
+    _startListening();
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: Stack(
         children: [
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: OverlayUI._bottomGutter,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFEAECEF)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6),
+          // ── Spotlight overlay ──────────────────────────────────────────────
+          if (showHighlight)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _pulseAnim,
+                builder: (context, _) => CustomPaint(
+                  painter: _HighlightPainter(
+                    highlight: _highlight!,
+                    pulse: _pulseAnim.value,
                   ),
-                ],
+                ),
               ),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
@@ -324,13 +443,114 @@ class _OverlayUIState extends State<OverlayUI> {
           ),
         ],
       ),
+      child: child,
     );
   }
 }
 
-/// Sonar-style pulse: a static blue dot inside a soft ring, with a second
-/// ring that expands outward and fades — gives a "live, listening" feel.
-/// Pulse only runs when [active] is true; otherwise it sits still.
+// ── Highlight painter ──────────────────────────────────────────────────────
+
+/// Dark semi-transparent overlay with a transparent cutout revealing the
+/// element the user must tap, plus a pulsing blue border and corner accents.
+class _HighlightPainter extends CustomPainter {
+  final _Highlight highlight;
+  final double pulse; // 0.0 → 1.0
+
+  const _HighlightPainter({required this.highlight, required this.pulse});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const padding = 8.0;
+
+    // ── Coordinate conversion ──
+    // Gemini's fractions are relative to the FULL SCREEN. The overlay only
+    // covers the bottom `size.height` logical pixels of a `screenHeight`-tall
+    // screen, so we need to translate Y from screen-space to overlay-space.
+    //
+    //   screen y in pixels = highlight.y * screenHeight
+    //   overlay top on screen = screenHeight - size.height
+    //   overlay-local y in pixels = screen_y - overlay_top
+    final overlayTopOnScreen = highlight.screenHeight - size.height;
+
+    final screenX = highlight.x * highlight.screenWidth;
+    final screenY = highlight.y * highlight.screenHeight;
+    final screenW = highlight.w * highlight.screenWidth;
+    final screenH = highlight.h * highlight.screenHeight;
+
+    // The overlay is full-width, so x maps 1-to-1 once we account for any
+    // potential horizontal offset (currently zero — overlay is matchParent).
+    final rx = screenX;
+    final ry = screenY - overlayTopOnScreen;
+    final rw = screenW;
+    final rh = screenH;
+
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+          rx - padding, ry - padding, rw + padding * 2, rh + padding * 2),
+      const Radius.circular(12),
+    );
+
+    // Semi-transparent dark film with a cut-out
+    final filmPaint = Paint()..color = Colors.black.withOpacity(0.45);
+    final fullRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    canvas.drawPath(
+      Path()
+        ..addRect(fullRect)
+        ..addRRect(rrect)
+        ..fillType = PathFillType.evenOdd,
+      filmPaint,
+    );
+
+    // Pulsing border
+    final borderPaint = Paint()
+      ..color = OverlayUI.blue.withOpacity(0.6 + 0.4 * pulse)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5 + 1.5 * pulse;
+    canvas.drawRRect(rrect, borderPaint);
+
+    // White corner accents
+    _drawCorners(canvas, rrect.outerRect, pulse);
+  }
+
+  void _drawCorners(Canvas canvas, Rect r, double pulse) {
+    const len = 16.0;
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.9)
+      ..strokeWidth = 3.0 + pulse
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final corners = <List<Offset>>[
+      // Top-left
+      [Offset(r.left, r.top + len), Offset(r.left, r.top), Offset(r.left + len, r.top)],
+      // Top-right
+      [Offset(r.right - len, r.top), Offset(r.right, r.top), Offset(r.right, r.top + len)],
+      // Bottom-left
+      [Offset(r.left, r.bottom - len), Offset(r.left, r.bottom), Offset(r.left + len, r.bottom)],
+      // Bottom-right
+      [Offset(r.right - len, r.bottom), Offset(r.right, r.bottom), Offset(r.right, r.bottom - len)],
+    ];
+
+    for (final c in corners) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(c[0].dx, c[0].dy)
+          ..lineTo(c[1].dx, c[1].dy)
+          ..lineTo(c[2].dx, c[2].dy),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HighlightPainter old) =>
+      old.pulse != pulse || old.highlight != highlight;
+}
+
+// ── Listening indicator ────────────────────────────────────────────────────
+
+/// Sonar-style pulse that also reacts to the real microphone amplitude
+/// (passed via [level]). Pulse only runs when [active] is true.
 class _ListeningIndicator extends StatefulWidget {
   const _ListeningIndicator({required this.active, this.level = 0.0});
 
@@ -378,9 +598,11 @@ class _ListeningIndicatorState extends State<_ListeningIndicator>
   Widget build(BuildContext context) {
     const baseSize = 52.0;
     const maxRipple = 84.0;
+    final levelBoost = widget.level * 14.0;
+
     return SizedBox(
-      width: maxRipple,
-      height: maxRipple,
+      width: maxRipple + levelBoost,
+      height: maxRipple + levelBoost,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
