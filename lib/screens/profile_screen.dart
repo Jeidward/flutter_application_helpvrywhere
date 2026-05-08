@@ -83,16 +83,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     }
   }
 
-  Future<void> _unlinkPhone() async {
-    final ok = await _confirmAction(
-      title: 'Unlink phone?',
-      content: 'You will not be able to use help request features '
-          'until you verify your phone again.',
-      actionLabel: 'Unlink',
+  Future<void> _changePhone() async {
+    final ok = await showPhoneVerificationDialog(
+      context,
+      canSkip: true,
+      onVerified: (cred) => _authService.changePhoneNumber(cred),
     );
-    if (!ok) return;
-    await _authService.unlinkPhone();
-    _loadUser();
+    if (ok) _loadUser();
   }
 
   @override
@@ -144,8 +141,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   }
 
   Widget _buildMain(UserModel user) {
-    final isVerified = user.phoneVerifiedUntil != null &&
-        user.phoneVerifiedUntil!.isAfter(DateTime.now());
+    final phoneNumber = FirebaseAuth.instance.currentUser?.phoneNumber;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -184,27 +180,15 @@ class _ProfileDialogState extends State<_ProfileDialog> {
           _infoRow('Email', user.email),
           const Divider(),
           _infoRow(
-            'Phone verification',
-            isVerified
-                ? 'Verified until ${user.phoneVerifiedUntil!.toLocal().toString().split(' ')[0]}'
-                : 'Not verified',
-          ),
-          const SizedBox(height: 8),
-          if (isVerified)
-            OutlinedButton(
-              onPressed: _unlinkPhone,
-              style: ProfileStyles.outlined,
-              child: const Text('Unlink Phone'),
-            )
-          else
-            ElevatedButton(
-              onPressed: () async {
-                await showPhoneVerificationDialog(context);
-                _loadUser();
-              },
-              style: ProfileStyles.primary,
-              child: const Text('Verify Phone'),
+            'Phone',
+            phoneNumber ?? 'Not registered',
+            trailing: IconButton(
+              tooltip: 'Change phone number',
+              onPressed: _changePhone,
+              icon: const Icon(Icons.edit_outlined,
+                  size: 20, color: ProfileStyles.accent),
             ),
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => _goTo(_View.edit),
@@ -228,15 +212,23 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _infoRow(String label, String value, {Widget? trailing}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontSize: 18)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(value, style: const TextStyle(fontSize: 18)),
+              ],
+            ),
+          ),
+          ?trailing,
         ],
       ),
     );

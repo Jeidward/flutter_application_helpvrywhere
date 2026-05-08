@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../theme/profile_styles.dart';
@@ -11,21 +12,34 @@ const _resendCooldownSeconds = 30;
 ///
 /// [canSkip] When true, the dialog can be dismissed without verifying
 /// (shows a "Cancel" button). Use false for mandatory verification flows.
+///
+/// [onVerified] Caller-provided action to run with the verified
+/// [PhoneAuthCredential]. The credential is built from the SMS code; if it's
+/// invalid, the action throws and the dialog shows the error so the user can
+/// retry. Defaults to linking the phone to the current user.
 Future<bool> showPhoneVerificationDialog(
   BuildContext context, {
   bool canSkip = true,
+  Future<void> Function(PhoneAuthCredential)? onVerified,
 }) async {
+  final action = onVerified ??
+      (cred) => AuthService().linkPhoneToCurrentUser(cred);
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _PhoneVerificationDialog(canSkip: canSkip),
+    builder: (_) =>
+        _PhoneVerificationDialog(canSkip: canSkip, onVerified: action),
   );
   return result == true;
 }
 
 class _PhoneVerificationDialog extends StatefulWidget {
   final bool canSkip;
-  const _PhoneVerificationDialog({required this.canSkip});
+  final Future<void> Function(PhoneAuthCredential) onVerified;
+  const _PhoneVerificationDialog({
+    required this.canSkip,
+    required this.onVerified,
+  });
 
   @override
   State<_PhoneVerificationDialog> createState() =>
@@ -149,18 +163,38 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
       _errorMessage = null;
     });
     try {
-      await _authService.confirmSmsCode(
+      final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
         smsCode: _codeController.text.trim(),
       );
+      await widget.onVerified(credential);
       _expiryTimer?.cancel();
       _resendTimer?.cancel();
       if (mounted) Navigator.pop(context, true);
-    } catch (_) {
+    } on FirebaseAuthException catch (e) {
       setState(() {
-        _errorMessage = 'Invalid code. Please try again.';
+        _errorMessage = _mapAuthError(e.code);
         _isLoading = false;
       });
+    } catch (_) {
+      setState(() {
+        _errorMessage = 'Verification failed. Please try again.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _mapAuthError(String code) {
+    switch (code) {
+      case 'invalid-verification-code':
+      case 'invalid-credential':
+        return 'Invalid code. Please try again.';
+      case 'credential-already-in-use':
+        return 'This phone number is already linked to another account.';
+      case 'provider-already-linked':
+        return 'A phone is already linked to this account.';
+      default:
+        return 'Verification failed. Please try again.';
     }
   }
 

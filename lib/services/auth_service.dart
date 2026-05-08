@@ -114,6 +114,13 @@ class AuthService {
       verificationId: verificationId,
       smsCode: smsCode,
     );
+    await linkPhoneToCurrentUser(credential);
+  }
+
+  /// Links a verified phone credential to the currently signed-in user
+  /// and sets the verification expiry. Throws on failure (e.g. invalid code,
+  /// already linked).
+  Future<void> linkPhoneToCurrentUser(PhoneAuthCredential credential) async {
     await _auth.currentUser?.linkWithCredential(credential);
     await _updatePhoneVerified();
   }
