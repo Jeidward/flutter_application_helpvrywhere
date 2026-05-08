@@ -33,6 +33,20 @@ class NeedHelpTab extends StatelessWidget {
                 if (granted) {
                   await SpeechBridge.instance.requestPermissionAndInit();
 
+                  // CRITICAL: ask for the screen-capture permission RIGHT NOW
+                  // (while the app is still in the foreground). If we wait
+                  // until the user already navigated to WhatsApp/etc. and
+                  // then prompt, the permission dialog drags our app back to
+                  // the foreground and the resulting screenshot captures US,
+                  // not the app the user is actually trying to use.
+                  final screenshotChannel = MethodChannel('app/screenshot');
+                  try {
+                    await screenshotChannel
+                        .invokeMethod<bool>('requestScreenCapture');
+                  } catch (e) {
+                    debugPrint('requestScreenCapture failed: $e');
+                  }
+
                   await FlutterOverlayWindow.showOverlay(
                     enableDrag: false,
                     height: 1150,
