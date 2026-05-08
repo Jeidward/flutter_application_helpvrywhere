@@ -16,12 +16,18 @@ class AuthService {
 
   // ─── Registration ────────────────────────────────────────────────────────
 
-  /// Registers a new user with email/password, creates Firestore user document.
-  /// Returns the UserCredential on success, throws FirebaseAuthException on failure.
+  /// Registers a new user with email/password and a verified phone credential.
+  /// Phone verification is mandatory — caller must obtain [phoneCredential]
+  /// (e.g. from the SMS code flow) before calling this method.
+  ///
+  /// If the phone credential turns out to be invalid or already linked to
+  /// another account, the freshly created email account is deleted to avoid
+  /// orphan accounts.
   Future<UserCredential> registerWithEmail({
     required String email,
     required String password,
     required String username,
+    PhoneAuthCredential? phoneCredential, // TODO(step 4): make required
   }) async {
     // Create Firebase Auth account
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -29,12 +35,27 @@ class AuthService {
       password: password,
     );
 
+    final newUser = credential.user!;
+    DateTime? verifiedUntil;
+    if (phoneCredential != null) {
+      try {
+        await newUser.linkWithCredential(phoneCredential);
+        verifiedUntil = _newPhoneExpiry();
+      } catch (e) {
+        // Cleanup: delete the orphan email account so the user can retry
+        try {
+          await newUser.delete();
+        } catch (_) {/* ignore secondary failure */}
+        rethrow;
+      }
+    }
+
     // Save user profile to Firestore
     final user = UserModel(
-      uid: credential.user!.uid,
+      uid: newUser.uid,
       email: email,
       username: username,
-      phoneVerifiedUntil: null,
+      phoneVerifiedUntil: verifiedUntil,
       createdAt: DateTime.now(),
     );
     await createUserDocument(user);
@@ -102,6 +123,8 @@ class AuthService {
   }
 
   /// Unlinks phone number from current account and clears phoneVerifiedUntil.
+  /// Used internally during phone change; not exposed as a user-facing action
+  /// because phone verification is mandatory.
   Future<void> unlinkPhone() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -111,15 +134,69 @@ class AuthService {
     });
   }
 
-  /// Sets phoneVerifiedUntil to N days from now in Firestore.
+  /// Changes the linked phone number on the current account.
+  /// Caller must provide a verified [newCredential] (e.g. from SMS dialog).
+  ///
+  /// Order: unlink old → link new → update Firestore. If link step fails
+  /// (e.g. wrong code or number already in use), Firestore is reset to
+  /// unverified so the AuthWrapper consistency check forces re-verification.
+  Future<void> changePhoneNumber(PhoneAuthCredential newCredential) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    if (user.phoneNumber != null) {
+      await user.unlink('phone');
+    }
+
+    try {
+      await user.linkWithCredential(newCredential);
+      await _db.collection('users').doc(user.uid).update({
+        'phoneVerifiedUntil': Timestamp.fromDate(_newPhoneExpiry()),
+      });
+    } catch (e) {
+      // Reset to unverified so AuthWrapper will force re-verify
+      await _db.collection('users').doc(user.uid).update({
+        'phoneVerifiedUntil': null,
+      });
+      rethrow;
+    }
+  }
+
+  /// Returns the expiry date for a freshly verified phone number.
+  /// Change the duration below to adjust verification expiry period.
+  DateTime _newPhoneExpiry() => DateTime.now().add(const Duration(days: 180));
+
+  /// Sets phoneVerifiedUntil to a fresh expiry in Firestore.
   Future<void> _updatePhoneVerified() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-    // Change the number below to adjust verification expiry period (cur: 180)
-    final expiryDate = DateTime.now().add(const Duration(days: 180));
     await _db.collection('users').doc(uid).update({
-      'phoneVerifiedUntil': Timestamp.fromDate(expiryDate),
+      'phoneVerifiedUntil': Timestamp.fromDate(_newPhoneExpiry()),
     });
+  }
+
+  /// Returns true if [user] has a non-null, non-expired phoneVerifiedUntil.
+  /// Used by AuthWrapper and feature gates.
+  bool isPhoneVerified(UserModel? user) {
+    final until = user?.phoneVerifiedUntil;
+    return until != null && until.isAfter(DateTime.now());
+  }
+
+  /// Reconciles inconsistent phone state between Firebase Auth and Firestore.
+  /// If Firestore says verified but Auth has no phone (e.g. crash mid-change),
+  /// clears Firestore so the user is treated as unverified.
+  /// Returns the consistent verified-or-not result.
+  Future<bool> ensurePhoneConsistency(UserModel userDoc) async {
+    final hasPhone = _auth.currentUser?.phoneNumber != null;
+    final hasValidExpiry = isPhoneVerified(userDoc);
+
+    if (hasValidExpiry && !hasPhone) {
+      await _db.collection('users').doc(userDoc.uid).update({
+        'phoneVerifiedUntil': null,
+      });
+      return false;
+    }
+    return hasValidExpiry;
   }
 
   // ─── Profile ─────────────────────────────────────────────────────────────
