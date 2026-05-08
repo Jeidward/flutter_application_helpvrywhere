@@ -27,7 +27,7 @@ class AuthService {
     required String email,
     required String password,
     required String username,
-    PhoneAuthCredential? phoneCredential, // TODO(step 4): make required
+    required PhoneAuthCredential phoneCredential,
   }) async {
     // Create Firebase Auth account
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -36,26 +36,22 @@ class AuthService {
     );
 
     final newUser = credential.user!;
-    DateTime? verifiedUntil;
-    if (phoneCredential != null) {
+    try {
+      await newUser.linkWithCredential(phoneCredential);
+    } catch (e) {
+      // Cleanup: delete the orphan email account so the user can retry
       try {
-        await newUser.linkWithCredential(phoneCredential);
-        verifiedUntil = _newPhoneExpiry();
-      } catch (e) {
-        // Cleanup: delete the orphan email account so the user can retry
-        try {
-          await newUser.delete();
-        } catch (_) {/* ignore secondary failure */}
-        rethrow;
-      }
+        await newUser.delete();
+      } catch (_) {/* ignore secondary failure */}
+      rethrow;
     }
 
-    // Save user profile to Firestore
+    // Save user profile to Firestore with verification expiry set
     final user = UserModel(
       uid: newUser.uid,
       email: email,
       username: username,
-      phoneVerifiedUntil: verifiedUntil,
+      phoneVerifiedUntil: _newPhoneExpiry(),
       createdAt: DateTime.now(),
     );
     await createUserDocument(user);
