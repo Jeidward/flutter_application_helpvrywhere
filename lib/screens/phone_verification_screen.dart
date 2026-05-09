@@ -1,45 +1,19 @@
-import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../theme/profile_styles.dart';
 
-const _codeExpirySeconds = 300;   // 5 minutes
-const _resendCooldownSeconds = 30;
-
 /// Shows the phone verification flow as a dialog popup.
-/// Returns true on successful verification, false if canceled/skipped.
-///
-/// [canSkip] When true, the dialog can be dismissed without verifying
-/// (shows a "Cancel" button). Use false for mandatory verification flows.
-///
-/// [onVerified] Caller-provided action to run with the verified
-/// [PhoneAuthCredential]. The credential is built from the SMS code; if it's
-/// invalid, the action throws and the dialog shows the error so the user can
-/// retry. Defaults to linking the phone to the current user.
-Future<bool> showPhoneVerificationDialog(
-  BuildContext context, {
-  bool canSkip = true,
-  Future<void> Function(PhoneAuthCredential)? onVerified,
-}) async {
-  final action = onVerified ??
-      (cred) => AuthService().linkPhoneToCurrentUser(cred);
-  final result = await showDialog<bool>(
+/// Two-step: enter phone number → enter SMS code.
+Future<void> showPhoneVerificationDialog(BuildContext context) async {
+  await showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (_) =>
-        _PhoneVerificationDialog(canSkip: canSkip, onVerified: action),
+    builder: (_) => const _PhoneVerificationDialog(),
   );
-  return result == true;
 }
 
 class _PhoneVerificationDialog extends StatefulWidget {
-  final bool canSkip;
-  final Future<void> Function(PhoneAuthCredential) onVerified;
-  const _PhoneVerificationDialog({
-    required this.canSkip,
-    required this.onVerified,
-  });
+  const _PhoneVerificationDialog();
 
   @override
   State<_PhoneVerificationDialog> createState() =>
@@ -56,83 +30,21 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  Timer? _expiryTimer;
-  int _expirySecondsLeft = 0;
-
-  Timer? _resendTimer;
-  int _resendSecondsLeft = 0;
-
   @override
   void dispose() {
     _phoneController.dispose();
     _codeController.dispose();
-    _expiryTimer?.cancel();
-    _resendTimer?.cancel();
     super.dispose();
   }
 
-  /// Validates E.164 format: `+[country code][number]`, total 8-16 chars.
-  String? _validatePhoneFormat(String input) {
-    final pattern = RegExp(r'^\+[1-9]\d{6,14}$');
-    if (!pattern.hasMatch(input)) {
-      return 'Phone must be in international format (e.g. +821012345678)';
-    }
-    return null;
-  }
-
-  void _startExpiryTimer() {
-    _expiryTimer?.cancel();
-    setState(() => _expirySecondsLeft = _codeExpirySeconds);
-    _expiryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_expirySecondsLeft <= 1) {
-        timer.cancel();
-        setState(() {
-          _expirySecondsLeft = 0;
-          _verificationId = null; // invalidate
-          _errorMessage = 'Code expired. Please tap Resend to get a new one.';
-        });
-      } else {
-        setState(() => _expirySecondsLeft--);
-      }
-    });
-  }
-
-  void _startResendCooldown() {
-    _resendTimer?.cancel();
-    setState(() => _resendSecondsLeft = _resendCooldownSeconds);
-    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_resendSecondsLeft <= 1) {
-        timer.cancel();
-        setState(() => _resendSecondsLeft = 0);
-      } else {
-        setState(() => _resendSecondsLeft--);
-      }
-    });
-  }
-
   Future<void> _sendCode() async {
-    final phone = _phoneController.text.trim();
-    final formatError = _validatePhoneFormat(phone);
-    if (formatError != null) {
-      setState(() => _errorMessage = formatError);
-      return;
-    }
-
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     await _authService.verifyPhoneNumber(
-      phoneNumber: phone,
+      phoneNumber: _phoneController.text.trim(),
       onCodeSent: (verificationId) {
         if (!mounted) return;
         setState(() {
@@ -140,8 +52,6 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
           _codeSent = true;
           _isLoading = false;
         });
-        _startExpiryTimer();
-        _startResendCooldown();
       },
       onError: (error) {
         if (!mounted) return;
@@ -154,54 +64,23 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
   }
 
   Future<void> _verifyCode() async {
-    if (_verificationId == null) {
-      setState(() => _errorMessage = 'Code expired. Please tap Resend.');
-      return;
-    }
+    if (_verificationId == null) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     try {
-      final credential = PhoneAuthProvider.credential(
+      await _authService.confirmSmsCode(
         verificationId: _verificationId!,
         smsCode: _codeController.text.trim(),
       );
-      await widget.onVerified(credential);
-      _expiryTimer?.cancel();
-      _resendTimer?.cancel();
-      if (mounted) Navigator.pop(context, true);
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        _errorMessage = _mapAuthError(e.code);
-        _isLoading = false;
-      });
+      if (mounted) Navigator.pop(context);
     } catch (_) {
       setState(() {
-        _errorMessage = 'Verification failed. Please try again.';
+        _errorMessage = 'Invalid code. Please try again.';
         _isLoading = false;
       });
     }
-  }
-
-  String _mapAuthError(String code) {
-    switch (code) {
-      case 'invalid-verification-code':
-      case 'invalid-credential':
-        return 'Invalid code. Please try again.';
-      case 'credential-already-in-use':
-        return 'This phone number is already linked to another account.';
-      case 'provider-already-linked':
-        return 'A phone is already linked to this account.';
-      default:
-        return 'Verification failed. Please try again.';
-    }
-  }
-
-  String _formatTime(int seconds) {
-    final m = (seconds ~/ 60).toString();
-    final s = (seconds % 60).toString().padLeft(2, '0');
-    return '$m:$s';
   }
 
   @override
@@ -223,24 +102,23 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
                   const Text('Phone Verification',
                       style: TextStyle(
                           fontSize: 22, fontWeight: FontWeight.bold)),
-                  if (widget.canSkip)
-                    IconButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      icon: const Icon(Icons.close),
-                    ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
               if (!_codeSent) ...[
                 const Text(
-                  'Verify your phone number to use the app.',
+                  'Verify your phone number to access help request features.',
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration: ProfileStyles.inputDecoration(
-                      'Phone number (e.g. +821012345678)'),
+                      'Phone number (e.g. +1234567890)'),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
@@ -255,12 +133,8 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
                       : const Text('Send Verification Code'),
                 ),
               ] else ...[
-                Text(
-                  _expirySecondsLeft > 0
-                      ? 'Enter the code sent to your phone. '
-                          'Expires in ${_formatTime(_expirySecondsLeft)}.'
-                      : 'Code expired. Tap Resend to get a new one.',
-                ),
+                const Text(
+                    'Enter the verification code sent to your phone.'),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _codeController,
@@ -270,8 +144,7 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed:
-                      (_isLoading || _verificationId == null) ? null : _verifyCode,
+                  onPressed: _isLoading ? null : _verifyCode,
                   style: ProfileStyles.primary,
                   child: _isLoading
                       ? const SizedBox(
@@ -281,15 +154,6 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
                         )
                       : const Text('Verify'),
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed:
-                      (_isLoading || _resendSecondsLeft > 0) ? null : _sendCode,
-                  style: ProfileStyles.outlined,
-                  child: Text(_resendSecondsLeft > 0
-                      ? 'Resend in ${_resendSecondsLeft}s'
-                      : 'Resend Code'),
-                ),
               ],
               if (_errorMessage != null)
                 Padding(
@@ -297,13 +161,11 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
                   child: Text(_errorMessage!,
                       style: const TextStyle(color: Colors.red)),
                 ),
-              if (widget.canSkip) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-              ],
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Skip for now'),
+              ),
             ],
           ),
         ),
