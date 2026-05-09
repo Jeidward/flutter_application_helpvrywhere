@@ -49,7 +49,13 @@ class NeedHelpTab extends StatelessWidget {
 
                   await FlutterOverlayWindow.showOverlay(
                     enableDrag: false,
-                    height: 1150,
+                    // Bottom-anchored panel. Tuned so the listening card
+                    // — including its 3 control buttons — clears Android's
+                    // gesture nav bar on Pixel-class devices (which can
+                    // be 60–80 dp tall, way more than the 32 we initially
+                    // budgeted for). 1100 px ≈ 367 dp on 3× density;
+                    // still ~30 % shorter than the original 1200.
+                    height: 1100,
                     width: WindowSize.matchParent,
                     alignment: OverlayAlignment.bottomCenter,
                     flag: OverlayFlag.focusPointer,

@@ -4,63 +4,35 @@ import 'package:http/http.dart' as http;
 
 // ── Data classes ────────────────────────────────────────────────────────────
 
-/// Coordinates of the element the user must tap, expressed as fractions
-/// of the full screen size (0.0 → 1.0). x/y = top-left corner.
-class HighlightRect {
-  final double x;
-  final double y;
-  final double width;
-  final double height;
-
-  const HighlightRect({
-    required this.x,
-    required this.y,
-    required this.width,
-    required this.height,
-  });
-
-  factory HighlightRect.fromJson(Map<String, dynamic> json) {
-    return HighlightRect(
-      x: (json['x'] as num).toDouble().clamp(0.0, 1.0),
-      y: (json['y'] as num).toDouble().clamp(0.0, 1.0),
-      width: (json['w'] as num).toDouble().clamp(0.0, 1.0),
-      height: (json['h'] as num).toDouble().clamp(0.0, 1.0),
-    );
-  }
-
-  /// Returns true when the highlight covers no meaningful area (e.g. element
-  /// not visible on screen or goal already complete).
-  bool get isEmpty => width == 0 && height == 0;
-}
-
 /// One guidance step returned by Gemini for the overlay loop.
+///
+/// Voice-first design: the instruction is the *only* signal the overlay
+/// uses to guide the user. There is no spatial highlight — vision models
+/// are unreliable at coordinates and the overlay would block the very tap
+/// we're asking the user to make. Instead, the instruction is shown in a
+/// small movable pill on screen and read aloud via TTS.
 class AiStep {
   final String instruction; // What the user must do — read aloud by TTS
-  final HighlightRect? highlight; // Element to highlight on screen (nullable)
   final bool isComplete; // true = goal reached, close the overlay
   final int stepNumber;
 
   const AiStep({
     required this.instruction,
-    this.highlight,
     required this.isComplete,
     this.stepNumber = 1,
   });
 
   factory AiStep.fromJson(Map<String, dynamic> json) {
-    final rawHighlight = json['highlight'];
     return AiStep(
-      instruction: (json['instruction'] as String?)?.trim() ??
+      instruction:
+          (json['instruction'] as String?)?.trim() ??
           'Follow the instructions on screen.',
-      highlight: (rawHighlight is Map<String, dynamic>)
-          ? HighlightRect.fromJson(rawHighlight)
-          : null,
       isComplete: json['is_complete'] as bool? ?? false,
       stepNumber: json['step_number'] as int? ?? 1,
     );
   }
 
-  /// Fallback when JSON parsing fails — plain text, no highlight.
+  /// Fallback when JSON parsing fails — plain text only.
   factory AiStep.error(String message) {
     return AiStep(instruction: message, isComplete: false);
   }
@@ -69,8 +41,11 @@ class AiStep {
 // ── Service ─────────────────────────────────────────────────────────────────
 
 class AiService {
-  // TODO: replace with your real key before demoing
-  static const String _apiKey = '';
+  // TODO(security): rotate this and move to --dart-define before shipping.
+  // The previous value was exposed in chat — generate a fresh one in
+  // https://aistudio.google.com/app/apikey when you get a chance.
+  static const String _apiKey = 'AIzaSyBRf-mrOmvzJW_l_AGIolWmwrgYql1uKU4';
+
   // 2.5-flash is the one that worked initially — sticking with it.
   // If you see 503 (overloaded), the retry logic in this file will handle it.
   static const String _model = 'gemini-2.5-flash';
@@ -93,7 +68,8 @@ class AiService {
   }) async {
     final base64Image = base64Encode(imageBytes);
 
-    final prompt = '''
+    final prompt =
+        '''
 You are an AI assistant helping elderly users (65+) use their smartphone.
 
 The user's goal is: "$userGoal"
@@ -105,7 +81,6 @@ no markdown, no code blocks, no preamble like "Here is the JSON".
 Required format:
 {
   "instruction": "...",
-  "highlight": { "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0 },
   "is_complete": false,
   "step_number": $currentStep
 }
@@ -113,29 +88,25 @@ Required format:
 ── Field rules ────────────────────────────────────────────────────────
 
 "instruction"
-  - ONE action, described using COLOR and SHAPE (NOT brand names).
-  - Position must be CONSISTENT with the highlight coordinates.
-    If your highlight is at y > 0.7, say "near the bottom" — NOT "top".
-    If your highlight is at x > 0.7, say "right side" — NOT "left".
-  - Maximum 25 words. Simple language for elderly users.
+  - ONE action the user must do next.
+  - Describe the target by COLOR, SHAPE, and POSITION using everyday
+    language. The user will use this description to find the element
+    themselves — be vivid and specific.
+    GOOD: "Tap the red square with a white play button, near the bottom
+           right of the screen — it is labeled YouTube."
+    GOOD: "Tap the green circle with a white phone, in the bottom row of
+           icons. It says WhatsApp underneath."
+    BAD:  "Tap the WhatsApp icon."        ← too brand-specific
+    BAD:  "Tap the third icon."           ← position only, not visual
+  - You MAY include the brand name ONLY as a hint at the end, not as the
+    primary identifier (e.g. "...labeled YouTube" / "...called WhatsApp").
+  - Mention WHERE on the screen ("near the bottom row", "at the top",
+    "in the middle on the left") so the user knows where to look.
+  - Maximum 30 words. Simple language for elderly users. No jargon.
 
-"highlight" — bounding box of the element to tap.
-  Coordinates are FRACTIONS OF THE FULL SCREENSHOT (0.0 to 1.0):
-    x = fraction from the LEFT edge   (0.0 = far left, 1.0 = far right)
-    y = fraction from the TOP edge    (0.0 = very top, 1.0 = very bottom)
-    w = width  as fraction of screen
-    h = height as fraction of screen
-  Position guide:
-    Status bar / clock     → y around 0.0–0.04
-    Top of content          → y around 0.05–0.25
-    Middle of screen        → y around 0.4–0.6
-    Bottom dock / nav bar   → y around 0.85–0.98
-  Be PRECISE. If the icon visually sits in the bottom row of app icons,
-  y should be 0.85 or higher.
-  If the element is not visible / no tap needed, use {"x":0,"y":0,"w":0,"h":0}.
-
-"is_complete": true ONLY if the goal is already achieved in this screenshot.
-  If true, set instruction to "You reached your goal! You can close the assistant."
+"is_complete": true ONLY if the goal is already achieved in this
+  screenshot. If true, set instruction to "You reached your goal! You
+  can close the assistant."
 ''';
 
     final body = jsonEncode({
@@ -143,17 +114,18 @@ Required format:
         {
           'parts': [
             {
-              'inline_data': {
-                'mime_type': 'image/jpeg',
-                'data': base64Image,
-              }
+              'inline_data': {'mime_type': 'image/jpeg', 'data': base64Image},
             },
             {'text': prompt},
-          ]
-        }
+          ],
+        },
       ],
       'generationConfig': {
-        'maxOutputTokens': 300,
+        // Bumped from 300 — JSON responses with `instruction` text + the
+        // highlight object were occasionally truncated mid-string at 300,
+        // which then failed to parse and surfaced as a generic
+        // "AI gave a confusing answer" error.
+        'maxOutputTokens': 600,
         'temperature': 0.1,
         'responseMimeType': 'application/json',
       },
@@ -181,13 +153,16 @@ Required format:
         // Success or non-retryable error → bail out
         if (!transientCodes.contains(response.statusCode)) break;
 
-        print('=== GEMINI transient error ${response.statusCode} '
-            '(attempt ${attempt + 1}/3) — retrying ===');
+        print(
+          '=== GEMINI transient error ${response.statusCode} '
+          '(attempt ${attempt + 1}/3) — retrying ===',
+        );
       } catch (e) {
         print('=== AI SERVICE EXCEPTION (attempt ${attempt + 1}/3): $e ===');
         if (e.toString().contains('SocketException')) {
           return AiStep.error(
-              'No internet connection. Please check your WiFi and try again.');
+            'No internet connection. Please check your WiFi and try again.',
+          );
         }
         // Other exceptions: treat as transient and retry
       }
@@ -203,41 +178,128 @@ Required format:
     }
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final rawText =
-          data['candidates'][0]['content']['parts'][0]['text'] as String;
-      var cleaned = rawText
-          .trim()
-          .replaceAll('```json', '')
-          .replaceAll('```', '')
-          .trim();
-
-      // Robust JSON extraction: Gemini sometimes prefaces the JSON with text
-      // like "Here is the JSON requested:\n{...}". Slice everything between
-      // the first `{` and the matching last `}` so we always parse pure JSON.
-      final firstBrace = cleaned.indexOf('{');
-      final lastBrace  = cleaned.lastIndexOf('}');
-      if (firstBrace >= 0 && lastBrace > firstBrace) {
-        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-      }
-
-      try {
-        final jsonMap = jsonDecode(cleaned) as Map<String, dynamic>;
-        return AiStep.fromJson(jsonMap);
-      } catch (e) {
-        print('=== JSON parse failed. Raw text: $rawText ===');
-        return AiStep.error(
-            'AI gave a confusing answer. Please try again.');
-      }
+      return _parseGuidanceResponse(response.body);
     }
 
     print('=== GEMINI ERROR after retries [analyzeScreenForGuidance] ===');
     print('Status: ${response.statusCode}');
     print('Body: ${response.body}');
 
-    // Generic error — don't try to interpret the cause for the user
-    return AiStep.error(
-        'Could not analyze the screen. Please try again.');
+    // Surface a more useful hint when we know the cause.
+    if (response.statusCode == 400) {
+      return AiStep.error(
+        'AI rejected the request (400). Check the terminal for details.',
+      );
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      return AiStep.error('AI key is invalid or unauthorized.');
+    }
+    return AiStep.error('Could not analyze the screen. Please try again.');
+  }
+
+  /// Defensive parser for Gemini's JSON-mode response.
+  ///
+  /// The previous version assumed the happy-path shape
+  /// `candidates[0].content.parts[0].text` always exists. In reality Gemini
+  /// can omit the parts array entirely when:
+  ///   - `finishReason == "SAFETY"`        (safety filter blocked the answer)
+  ///   - `finishReason == "MAX_TOKENS"`    (output was cut off mid-stream)
+  ///   - `finishReason == "RECITATION"`    (model thought it was reciting)
+  ///   - `promptFeedback.blockReason`      (prompt itself was blocked)
+  /// In those cases the old code threw a `Null check operator used on a null
+  /// value` and surfaced a generic "AI gave a confusing answer".
+  AiStep _parseGuidanceResponse(String responseBody) {
+    final dynamic data;
+    try {
+      data = jsonDecode(responseBody);
+    } catch (e) {
+      print('=== GEMINI: response was not JSON: $e ===');
+      print(
+        '=== Body (first 500 chars): '
+        '${responseBody.substring(0, responseBody.length.clamp(0, 500))}',
+      );
+      return AiStep.error(
+        'AI returned an unreadable response. Please try again.',
+      );
+    }
+
+    // Prompt-level block? No candidates at all.
+    final blockReason = data['promptFeedback']?['blockReason'];
+    if (blockReason != null) {
+      print('=== GEMINI: prompt blocked, reason=$blockReason ===');
+      return AiStep.error(
+        'The AI declined to analyze this screen. Try a different request.',
+      );
+    }
+
+    final candidates = data['candidates'];
+    if (candidates is! List || candidates.isEmpty) {
+      print('=== GEMINI: no candidates in response ===');
+      print('Body: $responseBody');
+      return AiStep.error('Could not analyze the screen. Please try again.');
+    }
+
+    final cand = candidates[0] as Map<String, dynamic>;
+    final finishReason = cand['finishReason'] as String?;
+    final parts = cand['content']?['parts'];
+
+    if (parts is! List || parts.isEmpty) {
+      print('=== GEMINI: empty parts (finishReason=$finishReason) ===');
+      switch (finishReason) {
+        case 'SAFETY':
+          return AiStep.error(
+            'The AI refused this screen for safety reasons. Try a different request.',
+          );
+        case 'MAX_TOKENS':
+          return AiStep.error(
+            'The AI ran out of room to answer. Try again — it usually works.',
+          );
+        case 'RECITATION':
+          return AiStep.error(
+            'The AI declined to repeat copyrighted content. Try rewording.',
+          );
+        default:
+          return AiStep.error(
+            'Could not analyze the screen. Please try again.',
+          );
+      }
+    }
+
+    final rawText = (parts[0] as Map<String, dynamic>)['text'] as String? ?? '';
+    if (rawText.trim().isEmpty) {
+      print('=== GEMINI: empty text part (finishReason=$finishReason) ===');
+      return AiStep.error('AI returned no answer. Please try again.');
+    }
+
+    var cleaned = rawText
+        .trim()
+        .replaceAll('```json', '')
+        .replaceAll('```', '')
+        .trim();
+
+    // Slice everything between the first `{` and the last `}` — handles the
+    // occasional case where Gemini prepends preamble text before the JSON.
+    final firstBrace = cleaned.indexOf('{');
+    final lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
+    try {
+      final jsonMap = jsonDecode(cleaned) as Map<String, dynamic>;
+      return AiStep.fromJson(jsonMap);
+    } catch (e) {
+      // If we hit MAX_TOKENS the JSON will be truncated mid-string. Tell the
+      // user something useful instead of a generic confusion message.
+      if (finishReason == 'MAX_TOKENS') {
+        return AiStep.error('The AI answer was cut off. Please try again.');
+      }
+      print(
+        '=== JSON parse failed (finishReason=$finishReason). '
+        'Raw text: $rawText ===',
+      );
+      return AiStep.error('AI gave a confusing answer. Please try again.');
+    }
   }
 
   // ── EXISTING: kept for AIGuideScreen (manual image-picker flow) ───────────
@@ -261,7 +323,7 @@ Required format:
                       'inline_data': {
                         'mime_type': 'image/jpeg',
                         'data': base64Image,
-                      }
+                      },
                     },
                     {
                       'text':
@@ -281,15 +343,12 @@ Your task:
 Reply ONLY with a numbered list. Maximum 5 steps. Format:
 1. [instruction]
 2. [instruction]
-3. [instruction]'''
-                    }
-                  ]
-                }
+3. [instruction]''',
+                    },
+                  ],
+                },
               ],
-              'generationConfig': {
-                'maxOutputTokens': 500,
-                'temperature': 0.3,
-              }
+              'generationConfig': {'maxOutputTokens': 500, 'temperature': 0.3},
             }),
           )
           .timeout(
@@ -298,16 +357,17 @@ Reply ONLY with a numbered list. Maximum 5 steps. Format:
           );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final text =
-            data['candidates'][0]['content']['parts'][0]['text'] as String;
+        final text = _safeExtractText(response.body);
+        if (text == null) {
+          return ['Could not analyze the image. Please try again.'];
+        }
         return _parseSteps(text);
       } else {
         print('=== GEMINI ERROR [analyzeScreenAndGuide] ===');
         print('Status: ${response.statusCode}');
         print('Body: ${response.body}');
         return [
-          'Error ${response.statusCode}. Check the terminal for details.'
+          'Error ${response.statusCode}. Check the terminal for details.',
         ];
       }
     } catch (e) {
@@ -315,10 +375,28 @@ Reply ONLY with a numbered list. Maximum 5 steps. Format:
       if (e.toString().contains('SocketException') ||
           e.toString().contains('timeout')) {
         return [
-          'No internet connection. Please check your WiFi and try again.'
+          'No internet connection. Please check your WiFi and try again.',
         ];
       }
       return ['Unexpected error: ${e.toString()}'];
+    }
+  }
+
+  /// Best-effort extraction of the assistant text from Gemini's response.
+  /// Returns null when there's no usable text (safety block, empty parts, …).
+  String? _safeExtractText(String responseBody) {
+    try {
+      final data = jsonDecode(responseBody);
+      if (data['promptFeedback']?['blockReason'] != null) return null;
+      final candidates = data['candidates'];
+      if (candidates is! List || candidates.isEmpty) return null;
+      final parts = candidates[0]['content']?['parts'];
+      if (parts is! List || parts.isEmpty) return null;
+      final text = parts[0]['text'] as String?;
+      if (text == null || text.trim().isEmpty) return null;
+      return text;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -337,20 +415,20 @@ Reply ONLY with a numbered list. Maximum 5 steps. Format:
                     {
                       'text':
                           'You are a technology assistant for elderly users. '
-                              'Answer this question in very simple language, max 3 short sentences: '
-                              '"$question"'
-                    }
-                  ]
-                }
+                          'Answer this question in very simple language, max 3 short sentences: '
+                          '"$question"',
+                    },
+                  ],
+                },
               ],
-              'generationConfig': {'maxOutputTokens': 200, 'temperature': 0.3}
+              'generationConfig': {'maxOutputTokens': 200, 'temperature': 0.3},
             }),
           )
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['candidates'][0]['content']['parts'][0]['text'] as String;
+        final text = _safeExtractText(response.body);
+        return text ?? 'Could not get a response. Please try again.';
       }
       return 'Could not get a response. Please try again.';
     } catch (e) {

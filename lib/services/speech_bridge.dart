@@ -165,6 +165,22 @@ class SpeechBridge {
         await _analyzeScreen();
         break;
 
+      case 'close':
+        // Sent by the overlay's X button or "Close Assistant" success
+        // button. Tear down the session so the next time the user opens
+        // the overlay they get a clean slate (no stale goal / step / TTS
+        // still talking).
+        try {
+          await _stt.stop();
+        } catch (_) {}
+        try {
+          await _tts.stop();
+        } catch (_) {}
+        _currentGoal = '';
+        _currentStep = 1;
+        _isAnalyzing = false;
+        debugPrint('SpeechBridge: session reset');
+        break;
     }
   }
 
@@ -214,40 +230,26 @@ class SpeechBridge {
         currentStep: _currentStep,
       );
       print('!!! Gemini returned: instruction="${step.instruction}" '
-          'highlight=${step.highlight} complete=${step.isComplete} !!!');
+          'complete=${step.isComplete} !!!');
 
       // 3. Speak the instruction
       await _speak(step.instruction);
 
       // 4. Send to overlay.
-      //
-      // CRITICAL: We include the FULL screen logical dimensions so the overlay
-      // can convert Gemini's screen-relative fractions into the overlay's local
-      // coordinate space. The overlay only covers the bottom ~1150 px of the
-      // screen — without this conversion, the highlight is drawn ~25% off.
-      final view = PlatformDispatcher.instance.views.first;
-      final screenW = view.physicalSize.width / view.devicePixelRatio;
-      final screenH = view.physicalSize.height / view.devicePixelRatio;
-
+      // Voice-first design: we send the instruction text only. The overlay
+      // displays it in a small movable pill so the user can read while
+      // tapping. No coordinates / region — vision models aren't reliable
+      // enough at those for the misaligned spotlight to be helpful, and
+      // the verbal description is already accurate.
       final Map<String, dynamic> msg = {
         'type': 'ai_step',
         'instruction': step.instruction,
         'step_number': step.stepNumber,
         'is_complete': step.isComplete,
-        'screen_width': screenW,
-        'screen_height': screenH,
       };
-      if (step.highlight != null && !step.highlight!.isEmpty) {
-        msg['highlight'] = {
-          'x': step.highlight!.x,
-          'y': step.highlight!.y,
-          'w': step.highlight!.width,
-          'h': step.highlight!.height,
-        };
-      }
 
       _send(msg);
-      print('!!! sent ai_step message to overlay (screen=${screenW.toInt()}x${screenH.toInt()}) !!!');
+      print('!!! sent ai_step message to overlay !!!');
     } catch (e, st) {
       print('!!! _analyzeScreen ERROR: $e !!!');
       print(st);
