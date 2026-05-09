@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 // ── Data classes ────────────────────────────────────────────────────────────
@@ -41,10 +42,11 @@ class AiStep {
 // ── Service ─────────────────────────────────────────────────────────────────
 
 class AiService {
-  // TODO(security): rotate this and move to --dart-define before shipping.
-  // The previous value was exposed in chat — generate a fresh one in
-  // https://aistudio.google.com/app/apikey when you get a chance.
-  static const String _apiKey = 'AIzaSyBRf-mrOmvzJW_l_AGIolWmwrgYql1uKU4';
+  // The Gemini key is loaded from `.env` (gitignored) at app startup
+  // via flutter_dotenv. Falls back to '' if missing — the code below
+  // surfaces a clear error in that case instead of crashing.
+  // To rotate: edit .env, hot-restart.
+  static String get _apiKey => dotenv.env['GEMINI_KEY'] ?? '';
 
   // 2.5-flash is the one that worked initially — sticking with it.
   // If you see 503 (overloaded), the retry logic in this file will handle it.
