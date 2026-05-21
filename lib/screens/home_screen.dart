@@ -7,6 +7,7 @@ import 'package:flutter_application_helpvrywhere/screens/tutorial_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'package:flutter_application_helpvrywhere/screens/help_others.dart';
 import 'package:flutter_application_helpvrywhere/screens/need_help.dart';
+import 'package:flutter_application_helpvrywhere/screens/conversations_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -46,6 +47,17 @@ class HomeScreen extends StatelessWidget {
           ),
 
           actions: [
+            IconButton(
+              icon: Icon(Icons.chat_bubble_outline),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ConversationsScreen(),
+                  ),
+                );
+              },
+            ),
             IconButton(
               onPressed: () => showTutorialDialog(context),
               icon: const Icon(Icons.help_outline),
