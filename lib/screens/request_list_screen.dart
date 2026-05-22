@@ -37,13 +37,18 @@ class RequestListWidget extends StatelessWidget {
 
         requests.sort((a, b) {
           int getPriority(RequestStatus status) {
+            // Lower = shown first. Order is most-actionable to least:
+            // active (still waiting for help) → accepted (someone is on
+            // the way) → completed → cancelled.
             switch (status) {
               case RequestStatus.active:
                 return 0;
-              case RequestStatus.completed:
+              case RequestStatus.accepted:
                 return 1;
-              case RequestStatus.cancelled:
+              case RequestStatus.completed:
                 return 2;
+              case RequestStatus.cancelled:
+                return 3;
             }
           }
 
@@ -52,6 +57,9 @@ class RequestListWidget extends StatelessWidget {
 
         final activeCount = requests
             .where((r) => r.status == RequestStatus.active)
+            .length;
+        final acceptedCount = requests
+            .where((r) => r.status == RequestStatus.accepted)
             .length;
         final completedCount = requests
             .where((r) => r.status == RequestStatus.completed)
@@ -78,6 +86,7 @@ class RequestListWidget extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildStat("Pending", activeCount, Colors.orange),
+                    _buildStat("Accepted", acceptedCount, Colors.blue),
                     _buildStat("Done", completedCount, Colors.green),
                     _buildStat("Cancelled", cancelledCount, Colors.red),
                   ],
@@ -164,6 +173,8 @@ class RequestListWidget extends StatelessWidget {
         return Colors.red.shade100;
       case RequestStatus.completed:
         return Colors.green.shade100;
+      case RequestStatus.accepted:
+        return Colors.blue.shade50;
       default:
         return Colors.white;
     }

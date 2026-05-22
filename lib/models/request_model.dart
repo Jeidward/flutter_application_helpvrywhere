@@ -1,6 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum RequestStatus { active, completed, cancelled }
+/// Lifecycle of a help request.
+///   active    – created, waiting for a volunteer
+///   accepted  – a volunteer claimed it (their uid is in [RequestModel.helperUserId]).
+///               No one else can claim it now.
+///   completed – help was delivered
+///   cancelled – requester pulled it
+enum RequestStatus { active, accepted, completed, cancelled }
 
 class RequestModel {
   final String id;
@@ -16,6 +22,13 @@ class RequestModel {
   final DateTime createdAt;
   final String userId;
 
+  /// The volunteer who accepted the request, or null while still open.
+  /// Set atomically by `RequestService.acceptRequest()`.
+  final String? helperUserId;
+
+  /// When the volunteer accepted, or null while still open.
+  final DateTime? acceptedAt;
+
   RequestModel({
     required this.id,
     required this.title,
@@ -29,6 +42,8 @@ class RequestModel {
     required this.status,
     required this.createdAt,
     required this.userId,
+    this.helperUserId,
+    this.acceptedAt,
   });
 
   factory RequestModel.fromMap(Map<String, dynamic> data, String id) {
@@ -45,6 +60,10 @@ class RequestModel {
       status: _statusFromString(data['status']),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       userId: data['userId'] ?? '',
+      helperUserId: data['helperUserId'] as String?,
+      acceptedAt: data['acceptedAt'] != null
+          ? (data['acceptedAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -61,11 +80,15 @@ class RequestModel {
       'status': status.name,
       'createdAt': FieldValue.serverTimestamp(),
       'userId': userId,
+      'helperUserId': helperUserId,
+      'acceptedAt': acceptedAt != null ? Timestamp.fromDate(acceptedAt!) : null,
     };
   }
 
   static RequestStatus _statusFromString(String? status) {
     switch (status) {
+      case 'accepted':
+        return RequestStatus.accepted;
       case 'completed':
         return RequestStatus.completed;
       case 'cancelled':

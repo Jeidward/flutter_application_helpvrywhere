@@ -48,8 +48,49 @@ class RequestService {
     await _db.collection(collection).doc(id).update({'status': status.name});
   }
 
+  /// Atomically claim a request for the given volunteer. Uses a Firestore
+  /// transaction so two volunteers tapping "I can help" at the same time
+  /// can't both succeed — the second one gets [AcceptResult.alreadyTaken].
+  ///
+  /// Returns:
+  ///   • [AcceptResult.success]      → you got it, request is now `accepted`
+  ///   • [AcceptResult.alreadyTaken] → another volunteer beat you to it
+  ///   • [AcceptResult.notActive]    → request was completed / cancelled
+  ///   • [AcceptResult.notFound]     → doc no longer exists
+  Future<AcceptResult> acceptRequest({
+    required String requestId,
+    required String helperUid,
+  }) async {
+    final docRef = _db.collection(collection).doc(requestId);
+    return await _db.runTransaction<AcceptResult>((tx) async {
+      final snapshot = await tx.get(docRef);
+      if (!snapshot.exists) return AcceptResult.notFound;
+      final data = snapshot.data()!;
+      final existingHelper = data['helperUserId'] as String?;
+      final status = data['status'] as String? ?? 'active';
+
+      if (existingHelper != null && existingHelper.isNotEmpty) {
+        return AcceptResult.alreadyTaken;
+      }
+      if (status != 'active') {
+        return AcceptResult.notActive;
+      }
+
+      tx.update(docRef, {
+        'helperUserId': helperUid,
+        'acceptedAt': FieldValue.serverTimestamp(),
+        'status': RequestStatus.accepted.name,
+      });
+      return AcceptResult.success;
+    });
+  }
+
   // DELETE
   Future<void> deleteRequest(String id) async {
     await _db.collection(collection).doc(id).delete();
   }
 }
+
+/// Outcome of `RequestService.acceptRequest`. Lets the UI render a
+/// helpful message when the accept fails for a known reason.
+enum AcceptResult { success, alreadyTaken, notActive, notFound }

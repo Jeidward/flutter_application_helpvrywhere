@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_helpvrywhere/debug/seed_test_requests.dart';
 import 'package:flutter_application_helpvrywhere/models/nearby_request.dart';
 import 'package:flutter_application_helpvrywhere/models/request_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/full_request_map_screen.dart';
@@ -7,7 +8,10 @@ import 'package:flutter_application_helpvrywhere/screens/request_directions_scre
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'package:flutter_application_helpvrywhere/services/location_service.dart';
 import 'package:flutter_application_helpvrywhere/services/request_service.dart';
+import 'package:flutter_application_helpvrywhere/theme/app_theme.dart';
 import 'package:flutter_application_helpvrywhere/widgets/map_markers.dart';
+import 'package:flutter_application_helpvrywhere/widgets/pill_button.dart';
+import 'package:flutter_application_helpvrywhere/widgets/request_card.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mb;
 
@@ -96,6 +100,73 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
     }).catchError((_) {});
   }
 
+  /// Counts per [RequestCategory] over the currently-active raw set
+  /// (i.e. status == active, but NOT yet filtered by category). The
+  /// `null` key holds the "All" total. Used to render count badges on
+  /// the filter chips.
+  Map<RequestCategory?, int> _categoryCounts(List<RequestModel> raw) {
+    final actives = raw.where((r) => r.status == RequestStatus.active).toList();
+    final counts = <RequestCategory?, int>{null: actives.length};
+    for (final c in RequestCategory.values) {
+      counts[c] = actives
+          .where((r) => RequestCategoryX.fromRaw(r.category) == c)
+          .length;
+    }
+    return counts;
+  }
+
+  /// Wraps a single Firestore [RequestModel] in a presentation
+  /// [NearbyRequest], computing distance + walking-estimate using the
+  /// current volunteer GPS. Used for both the "nearby" feed and the
+  /// active-request banner so the distance label stays consistent.
+  NearbyRequest _wrap(RequestModel r) {
+    final myLat = _myPosition?.latitude;
+    final myLng = _myPosition?.longitude;
+    final isMine = _myUid != null && r.userId == _myUid;
+    if (!isMine) _ensureUserNameLoaded(r.userId);
+
+    double distance = 0;
+    if (myLat != null && myLng != null) {
+      distance =
+          Geolocator.distanceBetween(myLat, myLng, r.latitude, r.longitude) /
+              1000.0;
+    }
+    final minutes = (distance * 12).round().clamp(1, 999);
+
+    final String displayName;
+    if (isMine) {
+      displayName = 'You';
+    } else {
+      final cached = _userNameCache[r.userId] ?? '';
+      displayName = cached.isNotEmpty ? cached : 'Requester';
+    }
+
+    return NearbyRequest(
+      request: r,
+      requesterName: displayName,
+      distanceKm: distance,
+      estimatedMinutes: minutes,
+    );
+  }
+
+  /// Returns the volunteer's currently-accepted requests (status =
+  /// accepted AND helperUserId = my uid). Most-recent first. Used by
+  /// the active-request banner above the map preview.
+  List<NearbyRequest> _myAccepted(List<RequestModel> raw) {
+    final uid = _myUid;
+    if (uid == null) return const [];
+    final mine = raw
+        .where((r) =>
+            r.status == RequestStatus.accepted && r.helperUserId == uid)
+        .toList()
+      ..sort((a, b) {
+        final at = a.acceptedAt ?? a.createdAt;
+        final bt = b.acceptedAt ?? b.createdAt;
+        return bt.compareTo(at);
+      });
+    return mine.map(_wrap).toList();
+  }
+
   /// Transforms raw Firestore docs into the presentation [NearbyRequest]
   /// view-models. Filters out non-active requests + the inactive
   /// category. Sorts by distance ascending.
@@ -151,8 +222,6 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
@@ -164,6 +233,30 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
+          // ── TEMP: seed 4 test requests near SKKU Natural Sciences
+          // Campus so the directions screen has interesting routes.
+          // Remove this button (and the import) when you're done seeding.
+          IconButton(
+            tooltip: 'Seed SKKU test data',
+            icon: const Icon(Icons.bug_report),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                await seedTestRequestsNearSKKU();
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Seeded 4 requests near SKKU'),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Seed failed: $e')),
+                );
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Refresh location',
             onPressed: _bootstrap,
@@ -196,10 +289,27 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
 
             final raw = snapshot.data ?? [];
             final nearby = _toNearby(raw);
+            final counts = _categoryCounts(raw);
+            final myAccepted = _myAccepted(raw);
 
             return ListView(
               padding: EdgeInsets.zero,
               children: [
+                if (myAccepted.isNotEmpty)
+                  _ActiveRequestBanner(
+                    request: myAccepted.first,
+                    onStartNavigation: () => startNavigationForRequest(
+                      context,
+                      request: myAccepted.first,
+                    ),
+                    onView: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            RequestDetailScreen(request: myAccepted.first),
+                      ),
+                    ),
+                  ),
                 _MapPreview(
                   userLat: _myPosition?.latitude,
                   userLng: _myPosition?.longitude,
@@ -218,9 +328,10 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
                   ),
                 ),
                 if (_locationDenied) const _LocationDeniedBanner(),
-                _CategoryFilterBar(
-                  activeCategory: _activeCategory,
-                  onChanged: (c) => setState(() => _activeCategory = c),
+                _CategoryChips(
+                  active: _activeCategory,
+                  counts: counts,
+                  onChange: (c) => setState(() => _activeCategory = c),
                 ),
                 if (nearby.isEmpty)
                   const Padding(
@@ -236,9 +347,8 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
                         16,
                         i == nearby.length - 1 ? 24 : 12,
                       ),
-                      child: _RequestCard(
+                      child: RequestCard(
                         request: nearby[i],
-                        colorScheme: theme.colorScheme,
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -246,17 +356,10 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
                                 RequestDetailScreen(request: nearby[i]),
                           ),
                         ),
-                        onHelp: () {
-                          // TODO(you): replace SnackBar with your real
-                          // accept-request flow.
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'You offered help for "${nearby[i].title}"',
-                              ),
-                            ),
-                          );
-                        },
+                        onOffer: () => confirmOfferHelp(
+                          context,
+                          request: nearby[i],
+                        ),
                         onDirections: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -409,6 +512,24 @@ class _MapPreviewState extends State<_MapPreview> {
     );
   }
 
+  /// Bumps the map zoom by [delta] (positive = zoom in). Reads the
+  /// current camera state first so the animation starts from where the
+  /// user is actually looking, then clamps to Mapbox's safe range.
+  Future<void> _zoomBy(double delta) async {
+    final map = _map;
+    if (map == null) return;
+    try {
+      final state = await map.getCameraState();
+      final next = (state.zoom + delta).clamp(0.0, 22.0);
+      await map.easeTo(
+        mb.CameraOptions(zoom: next),
+        mb.MapAnimationOptions(duration: 250),
+      );
+    } catch (_) {
+      // Best-effort — silently ignore if the camera isn't ready yet.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lat = widget.userLat ??
@@ -441,56 +562,31 @@ class _MapPreviewState extends State<_MapPreview> {
           Positioned(
             left: 12,
             top: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                '${widget.requests.length} nearby',
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-            ),
+            child: _NearbyChip(count: widget.requests.length),
           ),
           Positioned(
             right: 12,
             top: 12,
             child: Material(
-              color: Colors.white,
-              elevation: 2,
-              borderRadius: BorderRadius.circular(999),
+              color: AppColors.darkNavy,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
               child: InkWell(
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
                 onTap: widget.onOpenFullMap,
                 child: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.fullscreen,
-                        size: 16,
-                        color: Color(0xFF4A90E2),
-                      ),
-                      SizedBox(width: 4),
+                      Icon(Icons.open_in_full_rounded,
+                          size: 12, color: Colors.white),
+                      SizedBox(width: 6),
                       Text(
                         'Full map',
                         style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF4A90E2),
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -499,25 +595,30 @@ class _MapPreviewState extends State<_MapPreview> {
               ),
             ),
           ),
+          // Zoom in / out — stacked vertically on the right, mid-height.
+          Positioned(
+            right: 12,
+            top: 56,
+            child: Column(
+              children: [
+                _MapIconButton(
+                  icon: Icons.add,
+                  onTap: () => _zoomBy(1),
+                ),
+                const SizedBox(height: 8),
+                _MapIconButton(
+                  icon: Icons.remove,
+                  onTap: () => _zoomBy(-1),
+                ),
+              ],
+            ),
+          ),
           Positioned(
             right: 12,
             bottom: 12,
-            child: Material(
-              color: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 2,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _recenter,
-                child: const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Icon(
-                    Icons.my_location,
-                    size: 20,
-                    color: Color(0xFF4A90E2),
-                  ),
-                ),
-              ),
+            child: _MapIconButton(
+              icon: Icons.my_location,
+              onTap: _recenter,
             ),
           ),
         ],
@@ -527,287 +628,353 @@ class _MapPreviewState extends State<_MapPreview> {
 }
 
 // ---------------------------------------------------------------------------
-// Category filter bar
+// Active-request banner — shown above the map when the volunteer has an
+// accepted request that hasn't been completed yet. Lets them resume the
+// task at any time (start turn-by-turn navigation, or open the detail
+// view) so they're always aware of the commitment they're carrying.
 // ---------------------------------------------------------------------------
 
-class _CategoryFilterBar extends StatelessWidget {
-  const _CategoryFilterBar({
-    required this.activeCategory,
-    required this.onChanged,
-  });
-
-  final RequestCategory? activeCategory;
-  final ValueChanged<RequestCategory?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _FilterChip(
-              label: 'All',
-              selected: activeCategory == null,
-              onTap: () => onChanged(null),
-            ),
-            const SizedBox(width: 8),
-            for (final c in RequestCategory.values) ...[
-              _FilterChip(
-                label: c.label,
-                selected: activeCategory == c,
-                onTap: () => onChanged(c),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? Colors.black : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(999),
-        side: BorderSide(
-          color: selected ? Colors.black : const Color(0xFFE3E6EB),
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : const Color(0xFF1F2937),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Request card
-// ---------------------------------------------------------------------------
-
-class _RequestCard extends StatelessWidget {
-  const _RequestCard({
+class _ActiveRequestBanner extends StatelessWidget {
+  const _ActiveRequestBanner({
     required this.request,
-    required this.colorScheme,
-    required this.onTap,
-    required this.onHelp,
-    required this.onDirections,
+    required this.onStartNavigation,
+    required this.onView,
   });
 
   final NearbyRequest request;
-  final ColorScheme colorScheme;
-  final VoidCallback onTap;
-  final VoidCallback onHelp;
-  final VoidCallback onDirections;
+  final VoidCallback onStartNavigation;
+  final VoidCallback onView;
 
   @override
   Widget build(BuildContext context) {
-    final hasDistance = request.distanceKm > 0;
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Material(
+        color: AppColors.lightGreen,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          onTap: onView,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(
+                color: AppColors.primaryGreen.withOpacity(0.25),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryGreen.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.volunteer_activism_rounded,
+                        size: 16,
+                        color: AppColors.primaryGreen,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "You're helping ${request.requesterName}",
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.safetyTitle,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            request.title,
+                            style: t.bodyMedium?.copyWith(
+                              fontSize: 14,
+                              color: AppColors.safetyText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: PillButton.primary(
+                        label: 'Start navigation',
+                        icon: Icons.near_me_rounded,
+                        height: 40,
+                        fontSize: 13,
+                        color: AppColors.primaryGreen,
+                        onPressed: onStartNavigation,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 1,
+                      child: PillButton.outline(
+                        label: 'View',
+                        height: 40,
+                        fontSize: 13,
+                        onPressed: onView,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Small circular icon button used for map overlay actions
+// (zoom in / zoom out / recenter).
+// ---------------------------------------------------------------------------
+
+class _MapIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _MapIconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+      elevation: 2,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE3E6EB)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFD2502A),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      request.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    _timeAgo(request.postedAt),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: Text(
-                  hasDistance
-                      ? '${request.requesterName} · ${request.distanceKm.toStringAsFixed(1)} km'
-                      : request.requesterName,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    color: Color(0xFF4B5563),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  _CategoryPill(category: request.category),
-                  const SizedBox(width: 8),
-                  if (hasDistance)
-                    _MetaPill(
-                      icon: Icons.schedule,
-                      label: '~${request.estimatedMinutes} min',
-                    ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      onPressed: onHelp,
-                      child: const Text('I can help'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1F2937),
-                        side: const BorderSide(color: Color(0xFFD1D5DB)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      onPressed: onDirections,
-                      icon: const Icon(Icons.directions, size: 18),
-                      label: const Text('Directions'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: AppColors.primaryBlue),
         ),
       ),
     );
   }
 }
 
-class _CategoryPill extends StatelessWidget {
-  const _CategoryPill({required this.category});
+// ---------------------------------------------------------------------------
+// Pulse-dot "nearby" chip used on top-left of the map preview.
+// ---------------------------------------------------------------------------
 
-  final RequestCategory category;
+class _NearbyChip extends StatefulWidget {
+  final int count;
+  const _NearbyChip({required this.count});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF1EC),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        category.label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFFB14322),
-        ),
-      ),
-    );
-  }
+  State<_NearbyChip> createState() => _NearbyChipState();
 }
 
-class _MetaPill extends StatelessWidget {
-  const _MetaPill({required this.icon, required this.label});
+class _NearbyChipState extends State<_NearbyChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 2),
+  )..repeat();
 
-  final IconData icon;
-  final String label;
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F3F5),
-        borderRadius: BorderRadius.circular(999),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: const Color(0xFF4B5563)),
-          const SizedBox(width: 4),
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (ctx, _) {
+              final t = _ctrl.value;
+              final scale = 1.0 + 3.0 * t;
+              final opacity = (1.0 - t).clamp(0.0, 1.0) * 0.4;
+              return SizedBox(
+                width: 8,
+                height: 8,
+                child: Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Transform.scale(
+                      scale: scale,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primaryBlue.withOpacity(opacity),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 6),
           Text(
-            label,
+            '${widget.count} nearby',
             style: const TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF374151),
+              fontWeight: FontWeight.w700,
+              color: AppColors.darkNavy,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Category filter chips — count badge inside each pill.
+// ---------------------------------------------------------------------------
+
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({
+    required this.active,
+    required this.counts,
+    required this.onChange,
+  });
+
+  final RequestCategory? active;
+  final Map<RequestCategory?, int> counts;
+  final ValueChanged<RequestCategory?> onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 58,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+        children: [
+          _Chip(
+            label: 'All',
+            count: counts[null] ?? 0,
+            active: active == null,
+            onTap: () => onChange(null),
+          ),
+          for (final c in RequestCategory.values) ...[
+            const SizedBox(width: 10),
+            _Chip(
+              label: c.label,
+              count: counts[c] ?? 0,
+              active: active == c,
+              onTap: () => onChange(c),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({
+    required this.label,
+    required this.count,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    // Active state uses the brand primaryBlue (NOT black) — keeps the
+    // selected filter feeling like part of the blue button family.
+    final fg = active ? Colors.white : AppColors.darkNavy;
+    final bg = active ? AppColors.primaryBlue : Colors.white;
+    final countBg =
+        active ? Colors.white.withOpacity(0.22) : const Color(0xFFF5F6F8);
+    final countFg = active ? Colors.white : AppColors.muted;
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: active ? AppColors.primaryBlue : AppColors.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: countBg,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: countFg,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -849,14 +1016,3 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-String _timeAgo(DateTime t) {
-  final diff = DateTime.now().difference(t);
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-  if (diff.inHours < 24) return '${diff.inHours} h ago';
-  return '${diff.inDays} d ago';
-}
