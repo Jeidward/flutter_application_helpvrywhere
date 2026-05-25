@@ -308,7 +308,6 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
 
               const SizedBox(height: 16),
 
-              const SizedBox(height: 16),
               // PHONE
               TextFormField(
                 controller: _phoneController,

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/request_model.dart';
+import '../services/conversation_service.dart';
 
 class RequestService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -48,6 +49,15 @@ class RequestService {
     await _db.collection(collection).doc(id).update({'status': status.name});
   }
 
+  // GET A REQUEST BY ITS ID
+  Future<RequestModel?> getRequestById(String id) async {
+    final doc = await _db.collection(collection).doc(id).get();
+
+    if (!doc.exists) return null;
+
+    return RequestModel.fromMap(doc.data()!, doc.id);
+  }
+
   /// Atomically claim a request for the given volunteer. Uses a Firestore
   /// transaction so two volunteers tapping "I can help" at the same time
   /// can't both succeed — the second one gets [AcceptResult.alreadyTaken].
@@ -81,6 +91,13 @@ class RequestService {
         'acceptedAt': FieldValue.serverTimestamp(),
         'status': RequestStatus.accepted.name,
       });
+
+      final ConversationService conversationService = ConversationService();
+      await conversationService.createConversation(
+        currentUserId: data['userId'],
+        otherUserId: helperUid,
+      );
+
       return AcceptResult.success;
     });
   }
@@ -88,6 +105,18 @@ class RequestService {
   // DELETE
   Future<void> deleteRequest(String id) async {
     await _db.collection(collection).doc(id).delete();
+  }
+
+  Stream<List<RequestModel>> getRequestsBetweenUsers(
+    String userA,
+    String userB,
+  ) {
+    return getRequests().map((requests) {
+      return requests.where((r) {
+        return ((r.userId == userA && r.helperUserId == userB) ||
+            (r.userId == userB && r.helperUserId == userA));
+      }).toList();
+    });
   }
 }
 
