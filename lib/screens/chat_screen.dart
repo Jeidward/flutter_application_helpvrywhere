@@ -2,8 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/conversation_service.dart';
+import '../services/request_service.dart';
 import '../services/user_service.dart';
 import '../models/message_model.dart';
+import '../models/request_model.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -22,7 +24,9 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController controller = TextEditingController();
   final ConversationService _service = ConversationService();
+  final RequestService _request = RequestService();
   final UserService _userService = UserService();
+  final currentUser = FirebaseAuth.instance.currentUser!;
 
   String? username;
 
@@ -43,7 +47,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void sendMessage() async {
-    final currentUser = FirebaseAuth.instance.currentUser!;
     final text = controller.text.trim();
 
     if (text.isEmpty) return;
@@ -68,6 +71,54 @@ class _ChatScreenState extends State<ChatScreen> {
 
       body: Column(
         children: [
+          StreamBuilder<List<RequestModel>>(
+            stream: _request.getRequestsBetweenUsers(
+              currentUser.uid,
+              widget.otherUserId,
+            ),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SizedBox.shrink();
+              }
+
+              final requests = snapshot.data!;
+
+              if (requests.isEmpty) {
+                return const SizedBox.shrink();
+              }
+
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: requests.map((r) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[200],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            r.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              );
+            },
+          ),
           Expanded(
             child: StreamBuilder<List<MessageModel>>(
               stream: _service.getMessages(widget.conversationId),

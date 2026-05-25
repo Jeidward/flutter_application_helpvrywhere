@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/conversation_service.dart';
+import '../services/user_service.dart';
 import '../models/conversation_model.dart';
 import 'chat_screen.dart';
 
@@ -9,14 +10,11 @@ class ConversationsScreen extends StatelessWidget {
   ConversationsScreen({super.key});
 
   final ConversationService _conversationService = ConversationService();
+  final UserService _userService = UserService();
 
-  Future<void> _createTestConversation(String currentUserId) async {
-    const otherUserId = "irDBc8fkhNUuowXp77uFJVduO6p2";
-
-    await _conversationService.createConversation(
-      currentUserId: currentUserId,
-      otherUserId: otherUserId,
-    );
+  Future<String> _getUserName(String uid) async {
+    final name = await _userService.getUsername(uid);
+    return name;
   }
 
   @override
@@ -29,13 +27,6 @@ class ConversationsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Messages")),
-
-      floatingActionButton: FloatingActionButton(
-        child: const Icon(Icons.add_comment),
-        onPressed: () async {
-          await _createTestConversation(currentUser.uid);
-        },
-      ),
 
       body: StreamBuilder<List<ConversationModel>>(
         stream: _conversationService.getUserConversations(currentUser.uid),
@@ -61,8 +52,17 @@ class ConversationsScreen extends StatelessWidget {
 
               return ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.person)),
-                title: Text("User $otherUserId"),
+
+                title: FutureBuilder<String>(
+                  future: _getUserName(otherUserId),
+                  builder: (context, snapshot) {
+                    final name = snapshot.data ?? "Loading...";
+                    return Text(name);
+                  },
+                ),
+
                 subtitle: Text(conv.lastMessage),
+
                 onTap: () {
                   Navigator.push(
                     context,
