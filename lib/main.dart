@@ -4,6 +4,7 @@ import 'package:flutter_application_helpvrywhere/firebase_options.dart';
 import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
 import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
+import 'package:flutter_application_helpvrywhere/state/app_settings.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_application_helpvrywhere/overlay/overlay_ui.dart';
 import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
@@ -50,25 +51,47 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  // === Senior mode text scaling ===
+  // When seniorMode is on, every Text widget in the app is rendered at this
+  // multiplier of its normal size. Adjust the number below to change how big
+  static const double _seniorTextScale = 1.3;
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'HelpEverywhere',
-      theme: ThemeData(
-        colorScheme:
-            ColorScheme.fromSeed(
-              seedColor: const Color.fromARGB(255, 91, 167, 217),
-            ).copyWith(
-              secondary: const Color(0xFF6FCF97),
-              tertiary: const Color(0xFFFFC857),
-            ),
-      ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const AuthWrapper(),
-        '/login': (context) => const LoginScreen(),
-        '/nearby-request': (context) => const RequestMapScreen(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppSettings.instance.seniorMode,
+      builder: (context, seniorOn, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'HelpEverywhere',
+          theme: ThemeData(
+            colorScheme:
+                ColorScheme.fromSeed(
+                  seedColor: const Color.fromARGB(255, 91, 167, 217),
+                ).copyWith(
+                  secondary: const Color(0xFF6FCF97),
+                  tertiary: const Color(0xFFFFC857),
+                ),
+          ),
+          // Apply senior text scaling globally via MediaQuery override
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: seniorOn
+                    ? const TextScaler.linear(_seniorTextScale)
+                    : mq.textScaler,
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+          initialRoute: '/',
+          routes: {
+            '/': (context) => const AuthWrapper(),
+            '/login': (context) => const LoginScreen(),
+            '/nearby-request': (context) => const RequestMapScreen(),
+          },
+        );
       },
     );
   }

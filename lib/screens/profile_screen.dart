@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../state/app_settings.dart'; // [DH]
 import '../theme/profile_styles.dart';
 import 'phone_verification_screen.dart';
 
@@ -90,6 +91,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       onVerified: (cred) => _authService.changePhoneNumber(cred),
     );
     if (ok) _loadUser();
+  }
+
+  /// [DH] Persist new senior mode value and reflect it app-wide immediately.
+  Future<void> _setSeniorMode(bool value) async {
+    AppSettings.instance.seniorMode.value = value; // instant UI update
+    await _authService.setSeniorMode(value); // persist to Firestore
+    _loadUser(); // refresh local user doc
   }
 
   @override
@@ -187,6 +195,35 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               onPressed: _changePhone,
               icon: const Icon(Icons.edit_outlined,
                   size: 20, color: ProfileStyles.accent),
+            ),
+          ),
+          const Divider(),
+          // [DH] Senior mode toggle — larger text + simplified layouts
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Senior mode',
+                          style: TextStyle(
+                              color: Colors.grey, fontSize: 14)),
+                      SizedBox(height: 4),
+                      Text(
+                        'Larger text and simpler screens',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: user.seniorMode,
+                  onChanged: _setSeniorMode,
+                  activeThumbColor: ProfileStyles.accent,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
