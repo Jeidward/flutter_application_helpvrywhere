@@ -28,6 +28,7 @@ class AuthService {
     required String password,
     required String username,
     required PhoneAuthCredential phoneCredential,
+    bool seniorMode = false,
   }) async {
     // Create Firebase Auth account
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -53,6 +54,7 @@ class AuthService {
       username: username,
       phoneVerifiedUntil: _newPhoneExpiry(),
       createdAt: DateTime.now(),
+      seniorMode: seniorMode,
     );
     await createUserDocument(user);
 
