@@ -217,6 +217,14 @@ class AuthService {
     await _db.collection('users').doc(uid).update(updates);
   }
 
+  /// Updates seniorMode flag on the current user's Firestore document.
+  /// Used by Profile toggle and onboarding finish.
+  Future<void> setSeniorMode(bool value) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).update({'seniorMode': value});
+  }
+
   /// Changes password for currently signed-in user.
   /// Requires recent login — throws FirebaseAuthException with code
   /// 'requires-recent-login' if user needs to re-authenticate first.

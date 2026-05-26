@@ -43,6 +43,7 @@ dependencies:
   mapbox_maps_flutter: ^2.5.0    # nearby-requests map UI
   flutter_dotenv: ^5.1.0          # loads tokens from .env at startup
   google_fonts: ^6.2.1            # Plus Jakarta Sans for the nearby-request UI
+  shared_preferences: ^2.3.2      # local storage for pre-signup onboarding choices
 
 dev_dependencies:
   flutter_test:
