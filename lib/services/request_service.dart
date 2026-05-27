@@ -107,6 +107,18 @@ class RequestService {
     await _db.collection(collection).doc(id).delete();
   }
 
+  /// Live stream of a single request. Emits `null` when the doc is
+  /// deleted, otherwise the latest [RequestModel]. Used when a screen
+  /// needs to react to status changes (e.g. the chat-side "View
+  /// request" button updating as the request moves through accepted →
+  /// completed).
+  Stream<RequestModel?> watchRequestById(String id) {
+    return _db.collection(collection).doc(id).snapshots().map((snap) {
+      if (!snap.exists) return null;
+      return RequestModel.fromMap(snap.data()!, snap.id);
+    });
+  }
+
   Stream<List<RequestModel>> getRequestsBetweenUsers(
     String userA,
     String userB,

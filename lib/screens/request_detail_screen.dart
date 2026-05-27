@@ -1,10 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/nearby_request.dart';
+import 'package:flutter_application_helpvrywhere/models/request_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/navigation_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_directions_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/location_service.dart';
 import 'package:flutter_application_helpvrywhere/services/mapbox_directions_service.dart';
+import 'package:flutter_application_helpvrywhere/services/nearby_request_service.dart';
 import 'package:flutter_application_helpvrywhere/services/request_service.dart';
 import 'package:flutter_application_helpvrywhere/theme/app_theme.dart';
 import 'package:flutter_application_helpvrywhere/widgets/category_tag.dart';
@@ -25,6 +27,98 @@ class RequestDetailScreen extends StatelessWidget {
   const RequestDetailScreen({super.key, required this.request});
 
   final NearbyRequest request;
+
+  /// Opens the detail screen for a raw [RequestModel] (e.g. the chat
+  /// screen's request chips, the "my requests" list, push notifs).
+  /// Resolves the requester name + distance via
+  /// [NearbyRequestService.fromModel], showing a brief loading dialog,
+  /// then pushes the detail route.
+  ///
+  /// Use this instead of constructing [NearbyRequest] manually — that
+  /// would force every caller to re-implement the GPS + user-name
+  /// lookups.
+  static Future<void> openForModel(
+    BuildContext context,
+    RequestModel model, {
+    NearbyRequestService? service,
+  }) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final svc = service ?? NearbyRequestService();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    NearbyRequest nearby;
+    try {
+      nearby = await svc.fromModel(model, currentUserId: currentUid);
+    } catch (e) {
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not load request: $e')),
+      );
+      return;
+    }
+
+    navigator.pop(); // close loading
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => RequestDetailScreen(request: nearby),
+      ),
+    );
+  }
+
+  /// Opens the detail screen by Firestore doc id only. Use this when
+  /// the caller doesn't even have a [RequestModel] in hand — e.g. a
+  /// push notification carrying just a request id, or a deep link.
+  ///
+  /// Surfaces a SnackBar if the doc no longer exists.
+  static Future<void> openById(
+    BuildContext context,
+    String requestId, {
+    NearbyRequestService? service,
+  }) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final svc = service ?? NearbyRequestService();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    NearbyRequest nearby;
+    try {
+      nearby = await svc.fromId(requestId, currentUserId: currentUid);
+    } on RequestNotFoundException {
+      navigator.pop();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Request not found — it may have been deleted.'),
+        ),
+      );
+      return;
+    } catch (e) {
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not load request: $e')),
+      );
+      return;
+    }
+
+    navigator.pop();
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => RequestDetailScreen(request: nearby),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,16 +248,74 @@ class RequestDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      bottomNavigationBar: _ActionBar(
-        onOffer: () => confirmOfferHelp(context, request: request),
-        onDirections: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RequestDirectionsScreen(request: request),
-          ),
+      bottomNavigationBar: _buildActionBar(context),
+    );
+  }
+
+  /// Picks the right bottom-action bar based on the current user's
+  /// relationship to this request. Four mutually-exclusive cases:
+  ///
+  ///   1. **You posted it** → "Offer help" makes no sense. Show only
+  ///      "Directions" (still useful as a sanity-check of the pin).
+  ///   2. **You already accepted it** → swap "Offer help" for
+  ///      "Start navigation" so the user resumes instead of re-claims.
+  ///   3. **Status != active** (cancelled / completed / accepted by
+  ///      someone else) → no offer action; show "Directions" only.
+  ///   4. **Active, not yours, not yours-accepted** → the default
+  ///      "Offer help" + "Directions" pair.
+  Widget _buildActionBar(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final status = request.request.status;
+    final isMine =
+        currentUid != null && request.requesterUserId == currentUid;
+    final isMyAccepted = currentUid != null &&
+        request.request.helperUserId == currentUid &&
+        status == RequestStatus.accepted;
+    final canOffer =
+        !isMine && !isMyAccepted && status == RequestStatus.active;
+
+    final directions = PillButton.outline(
+      label: 'Directions',
+      icon: Icons.near_me_outlined,
+      height: 48,
+      fontSize: 14,
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestDirectionsScreen(request: request),
         ),
       ),
     );
+
+    if (isMyAccepted) {
+      return _ActionBar(
+        primary: PillButton.primary(
+          label: 'Start navigation',
+          icon: Icons.near_me_rounded,
+          height: 48,
+          fontSize: 14,
+          onPressed: () =>
+              startNavigationForRequest(context, request: request),
+        ),
+        secondary: directions,
+      );
+    }
+
+    if (canOffer) {
+      return _ActionBar(
+        primary: PillButton.primary(
+          label: 'Offer help',
+          icon: Icons.favorite_rounded,
+          height: 48,
+          fontSize: 14,
+          onPressed: () => confirmOfferHelp(context, request: request),
+        ),
+        secondary: directions,
+      );
+    }
+
+    // Case 1 (mine) and case 3 (closed) — just Directions.
+    return _ActionBar(secondary: directions);
   }
 }
 
@@ -593,11 +745,19 @@ class _Avatar extends StatelessWidget {
 // Sticky bottom action bar — "Offer help" + "Directions".
 // ---------------------------------------------------------------------------
 
+/// Flexible sticky bottom action bar.
+///
+///   • If [primary] is provided → renders `[primary] + [secondary]` at
+///     16:10 flex (matches the original mockup proportions).
+///   • If [primary] is `null` → renders only [secondary], full-width.
+///
+/// The role-based logic in [RequestDetailScreen._buildActionBar] picks
+/// which combination to pass.
 class _ActionBar extends StatelessWidget {
-  final VoidCallback? onOffer;
-  final VoidCallback? onDirections;
+  const _ActionBar({this.primary, required this.secondary});
 
-  const _ActionBar({this.onOffer, this.onDirections});
+  final Widget? primary;
+  final Widget secondary;
 
   @override
   Widget build(BuildContext context) {
@@ -610,31 +770,15 @@ class _ActionBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 16,
-                child: PillButton.primary(
-                  label: 'Offer help',
-                  icon: Icons.favorite_rounded,
-                  height: 48,
-                  fontSize: 14,
-                  onPressed: onOffer,
+          child: primary == null
+              ? secondary
+              : Row(
+                  children: [
+                    Expanded(flex: 16, child: primary!),
+                    const SizedBox(width: 10),
+                    Expanded(flex: 10, child: secondary),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 10,
-                child: PillButton.outline(
-                  label: 'Directions',
-                  icon: Icons.near_me_outlined,
-                  height: 48,
-                  fontSize: 14,
-                  onPressed: onDirections,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

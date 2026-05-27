@@ -1,11 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/message_model.dart';
+import '../models/request_model.dart';
 import '../services/conversation_service.dart';
 import '../services/request_service.dart';
 import '../services/user_service.dart';
-import '../models/message_model.dart';
-import '../models/request_model.dart';
+import 'request_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -96,20 +97,31 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: requests.map((r) {
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[200],
+                        // Tappable chip — opens the full request detail
+                        // screen. Conversion from RequestModel →
+                        // NearbyRequest happens inside the static
+                        // helper so this call site stays trivial.
+                        child: Material(
+                          color: Colors.blue[200],
+                          borderRadius: BorderRadius.circular(20),
+                          child: InkWell(
                             borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            r.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                            onTap: () => RequestDetailScreen.openForModel(
+                              context,
+                              r,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              child: Text(
+                                r.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
                           ),
                         ),
                       );

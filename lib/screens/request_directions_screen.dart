@@ -153,8 +153,7 @@ class _RequestDirectionsScreenState extends State<RequestDirectionsScreen> {
               return Container(
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   boxShadow: [
                     BoxShadow(
                       color: Color(0x1F000000),
@@ -221,33 +220,6 @@ class _RequestDirectionsScreenState extends State<RequestDirectionsScreen> {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF1F2937),
-                              side: const BorderSide(color: Color(0xFFD1D5DB)),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 14,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () {
-                              // TODO(you): open in-app chat with requester.
-                            },
-                            icon: const Icon(
-                              Icons.chat_bubble_outline,
-                              size: 18,
-                            ),
-                            label: const Text(
-                              'Chat',
-                              style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -296,19 +268,12 @@ class _RequestDirectionsScreenState extends State<RequestDirectionsScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 20,
-              color: Color(0xFFB45309),
-            ),
+            const Icon(Icons.error_outline, size: 20, color: Color(0xFFB45309)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 _routeError!,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF92400E),
-                ),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
               ),
             ),
           ],
@@ -447,9 +412,7 @@ class _DirectionsMapState extends State<_DirectionsMap> {
     final List<mb.Position> coords;
     final geometry = widget.routeGeometry;
     if (geometry != null && geometry.length >= 2) {
-      coords = [
-        for (final c in geometry) mb.Position(c[0], c[1]),
-      ];
+      coords = [for (final c in geometry) mb.Position(c[0], c[1])];
     } else {
       // Loading / error — show a faint straight line as a placeholder.
       coords = [
@@ -547,11 +510,7 @@ class _StepTile extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: const Color(0xFFD9E4F1)),
                 ),
-                child: Icon(
-                  icon,
-                  size: 16,
-                  color: const Color(0xFF4A90E2),
-                ),
+                child: Icon(icon, size: 16, color: const Color(0xFF4A90E2)),
               ),
               if (!isLast)
                 Container(
@@ -635,7 +594,9 @@ IconData _iconForManeuver(String type, String modifier) {
     case 'rotary':
     case 'exit roundabout':
     case 'exit rotary':
-      return modifier == 'left' ? Icons.roundabout_left : Icons.roundabout_right;
+      return modifier == 'left'
+          ? Icons.roundabout_left
+          : Icons.roundabout_right;
     case 'fork':
       return modifier.contains('left') ? Icons.fork_left : Icons.fork_right;
     case 'end of road':
