@@ -18,14 +18,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+
+    _pages = [
+      HomeTab(onNavigate: _onTabSelected),
+      const HelpOthersTab(),
+      ConversationsScreen(),
+      const MyRequestTab(),
+    ];
+  }
+
   int _currentIndex = 0;
 
-  final List<Widget> _pages = [
-    const HomeTab(),
-    const HelpOthersTab(),
-    ConversationsScreen(),
-    const MyRequestTab(),
-  ];
+  late final List<Widget> _pages;
 
   void _onTabSelected(int index) {
     setState(() {
@@ -54,12 +61,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   _getCurrentTimeDate(),
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                Text(name, style: const TextStyle(fontSize: 18)),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             );
           },
@@ -75,9 +95,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             icon: const Icon(Icons.help_outline),
+            iconSize: 30,
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: 16),
             child: GestureDetector(
               onTap: () => showProfileDialog(context),
               child: FutureBuilder<UserModel?>(
@@ -88,11 +109,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   final photoUrl = snapshot.data?.photoUrl;
                   return CircleAvatar(
                     backgroundColor: Colors.blueGrey.shade100,
+                    radius: 22,
                     backgroundImage: photoUrl != null
                         ? NetworkImage(photoUrl)
                         : null,
                     child: photoUrl == null
-                        ? const Icon(Icons.person, color: Colors.blueGrey)
+                        ? const Icon(
+                            Icons.person,
+                            size: 26,
+                            color: Colors.blueGrey,
+                          )
                         : null,
                   );
                 },
@@ -106,52 +132,71 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: _currentIndex, children: _pages),
 
       // ================= FLOATING BUTTON =================
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const RequestCreationScreen()),
-          );
-        },
-        child: const Icon(Icons.add),
+      floatingActionButton: SizedBox(
+        height: 64,
+        width: 64,
+        child: FloatingActionButton(
+          backgroundColor: const Color(0xFF1565C0),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RequestCreationScreen()),
+            );
+          },
+          child: const Icon(Icons.add, color: Colors.white, size: 32),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
       // ================= BOTTOM NAV =================
-      bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.home),
-                color: _currentIndex == 0 ? Colors.blue : Colors.grey,
-                onPressed: () => _onTabSelected(0),
-              ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+        ),
+        child: BottomAppBar(
+          color: Colors.white,
+          elevation: 0,
+          shape: const CircularNotchedRectangle(),
+          notchMargin: 10,
+          child: SizedBox(
+            height: 68,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.home),
+                  iconSize: 28,
+                  color: _currentIndex == 0 ? Colors.blue : Colors.grey,
+                  onPressed: () => _onTabSelected(0),
+                ),
 
-              IconButton(
-                icon: const Icon(Icons.map),
-                color: _currentIndex == 1 ? Colors.blue : Colors.grey,
-                onPressed: () => _onTabSelected(1),
-              ),
+                IconButton(
+                  icon: const Icon(Icons.map),
+                  iconSize: 28,
+                  color: _currentIndex == 1 ? Colors.blue : Colors.grey,
+                  onPressed: () => _onTabSelected(1),
+                ),
 
-              const SizedBox(width: 40),
+                const SizedBox(width: 50),
 
-              IconButton(
-                icon: const Icon(Icons.chat_bubble_outline),
-                color: _currentIndex == 2 ? Colors.blue : Colors.grey,
-                onPressed: () => _onTabSelected(2),
-              ),
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  iconSize: 28,
+                  color: _currentIndex == 2 ? Colors.blue : Colors.grey,
+                  onPressed: () => _onTabSelected(2),
+                ),
 
-              IconButton(
-                icon: const Icon(Icons.list_alt),
-                color: _currentIndex == 3 ? Colors.blue : Colors.grey,
-                onPressed: () => _onTabSelected(3),
-              ),
-            ],
+                IconButton(
+                  icon: const Icon(Icons.list_alt),
+                  iconSize: 28,
+                  color: _currentIndex == 3 ? Colors.blue : Colors.grey,
+                  onPressed: () => _onTabSelected(3),
+                ),
+              ],
+            ),
           ),
         ),
       ),

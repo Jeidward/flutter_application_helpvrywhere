@@ -30,7 +30,7 @@ class ConversationsScreen extends StatelessWidget {
             children: [
               Text(
                 "Messages",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               Center(child: Text("Not logged in")),
             ],
@@ -46,8 +46,8 @@ class ConversationsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "Messages",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              "My Conversations",
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 12),

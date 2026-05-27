@@ -12,9 +12,9 @@ class MyRequestTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "My requests",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const Text(
+              "My Requests",
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 12),

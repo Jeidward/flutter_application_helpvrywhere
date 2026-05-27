@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
-
-import 'package:flutter_application_helpvrywhere/screens/help_others.dart';
-import 'package:flutter_application_helpvrywhere/screens/my_request_tab.dart';
 import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
 
 class HomeTab extends StatelessWidget {
-  const HomeTab({super.key});
+  final Function(int) onNavigate;
+
+  const HomeTab({super.key, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             "Home",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
 
           const SizedBox(height: 10),
@@ -29,10 +29,7 @@ class HomeTab extends StatelessWidget {
             title: "Offer to help nearby",
             subtitle: "See requests around you. Lend a help to a neighbor",
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const HelpOthersTab()),
-              );
+              onNavigate(1);
             },
           ),
 
@@ -45,10 +42,7 @@ class HomeTab extends StatelessWidget {
             title: "My request",
             subtitle: "See my current request for help",
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MyRequestTab()),
-              );
+              onNavigate(3);
             },
           ),
 
@@ -124,7 +118,7 @@ class _HomeCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        height: 140,
+        height: 120,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: color,
@@ -133,16 +127,16 @@ class _HomeCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 55,
-              height: 55,
+              width: 60,
+              height: 60,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: Colors.white, size: 28),
+              child: Icon(icon, color: Colors.white, size: 36),
             ),
 
-            const SizedBox(width: 16),
+            const SizedBox(width: 20, height: 30),
 
             Expanded(
               child: Column(
@@ -153,7 +147,7 @@ class _HomeCard extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -162,7 +156,7 @@ class _HomeCard extends StatelessWidget {
                     subtitle,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
-                      fontSize: 13,
+                      fontSize: 16,
                     ),
                   ),
                 ],
