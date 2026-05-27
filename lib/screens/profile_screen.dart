@@ -2,8 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../state/app_settings.dart'; 
 import '../theme/profile_styles.dart';
+import 'persona_screen.dart'; // debug entry
 import 'phone_verification_screen.dart';
+import 'welcome_screen.dart'; // debug entry
 
 /// Shows the profile dialog with an internal view switcher (main / edit / change password).
 Future<void> showProfileDialog(BuildContext context) async {
@@ -90,6 +93,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       onVerified: (cred) => _authService.changePhoneNumber(cred),
     );
     if (ok) _loadUser();
+  }
+
+  /// Persist new senior mode value and reflect it app-wide immediately.
+  Future<void> _setSeniorMode(bool value) async {
+    AppSettings.instance.seniorMode.value = value; // instant UI update
+    await _authService.setSeniorMode(value); // persist to Firestore
+    _loadUser(); // refresh local user doc
   }
 
   @override
@@ -189,6 +199,35 @@ class _ProfileDialogState extends State<_ProfileDialog> {
                   size: 20, color: ProfileStyles.accent),
             ),
           ),
+          const Divider(),
+          // Senior mode toggle — larger text + simplified layouts
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Senior mode',
+                          style: TextStyle(
+                              color: Colors.grey, fontSize: 14)),
+                      SizedBox(height: 4),
+                      Text(
+                        'Larger text and simpler screens',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: user.seniorMode,
+                  onChanged: _setSeniorMode,
+                  activeThumbColor: ProfileStyles.accent,
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => _goTo(_View.edit),
@@ -206,6 +245,45 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             onPressed: _logout,
             style: ProfileStyles.outlined,
             child: const Text('Log Out'),
+          ),
+          // === DEBUG ENTRY POINTS — remove before production ===
+          const SizedBox(height: 16),
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.only(top: 4, bottom: 8),
+            child: Text(
+              'Debug',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                  ),
+                  style: ProfileStyles.outlined,
+                  child: const Text('View Welcome'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PersonaScreen()),
+                  ),
+                  style: ProfileStyles.outlined,
+                  child: const Text('View Persona'),
+                ),
+              ),
+            ],
           ),
         ],
       ),

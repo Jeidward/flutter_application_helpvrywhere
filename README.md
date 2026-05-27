@@ -174,6 +174,42 @@ This way, if Firebase changes, you only update the service file — not every sc
 
 ---
 
+## Phone verification — how to test
+
+This app uses Firebase phone auth (SMS OTP) for identity verification. Sign-up requires a verified phone number, and `AuthWrapper` blocks Home until verification is valid (expires after 180 days; configurable in `services/auth_service.dart`).
+
+To test without burning real SMS quota, Firebase lets you register test phone numbers that return a fixed code instead of sending a real SMS.
+
+### 1. Register a test phone number
+
+Firebase Console → Authentication → Sign-in method → Phone → **Test phone numbers** → add a number + code of your choice (e.g. `+1 555 000 1234` / `123456`).
+
+> Each real or test number can only be linked to one account at a time, so use a unique test number per test account. A shared default `+1 1234567890` / `123456` is already registered but may already be in use — add your own if it doesn't work.
+
+### 2. Platform-specific setup
+
+**Web** — works immediately with your test number, no extra setup.
+
+**Android** — Firebase uses reCAPTCHA by default, which can be flaky on emulators. Register your debug SHA-1 fingerprint to skip it:
+
+```bash
+keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+```
+
+If `keytool` isn't on your PATH, use the full path that ships with Android Studio:
+
+```bash
+"C:\Program Files\Android\Android Studio\jbr\bin\keytool" -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+```
+
+Copy the `SHA1:` value → Firebase Console → Project Settings → your Android app → **Add fingerprint**.
+
+### 3. Sign up
+
+Use your test number on the sign-up screen. The SMS code field appears inline; enter the test code you registered to complete sign-up.
+
+---
+
 ## Quick mental model
 
 > Flutter is a tree of widgets. Everything on screen is a widget nested inside another widget. `main.dart` is the root of the tree. Screens are big branches. Widgets in `widgets/` are small reusable leaves. Services and models are the data flowing through the tree — they are never visible on screen themselves.

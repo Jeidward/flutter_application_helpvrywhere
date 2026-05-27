@@ -8,7 +8,11 @@ import 'registration_screen.dart';
 /// Login screen — email/password form.
 /// On success, navigates to HomeScreen.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// If true, the registration dialog opens automatically right after
+  /// this screen mounts (used when arriving from the onboarding tour's
+  /// "Create account" CTA so the user doesn't have to tap "Sign up" again).
+  final bool autoOpenRegister;
+  const LoginScreen({super.key, this.autoOpenRegister = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -23,6 +27,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoOpenRegister) {
+      // Schedule after first frame so context is ready for showDialog
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showRegistrationDialog(context);
+      });
+    }
+  }
 
   @override
   void dispose() {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../state/app_settings.dart';
 import '../theme/profile_styles.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -31,6 +32,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final user = await _authService.getUserDocument(uid);
     if (user == null) return _AuthState(user: null, isVerified: false);
     final isVerified = await _authService.ensurePhoneConsistency(user);
+    // Push seniorMode into app-level state so MaterialApp can react.
+    AppSettings.instance.seniorMode.value = user.seniorMode;
     return _AuthState(user: user, isVerified: isVerified);
   }
 
