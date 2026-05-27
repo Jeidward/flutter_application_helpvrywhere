@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/firebase_options.dart';
 import 'package:flutter_application_helpvrywhere/screens/auth_wrapper.dart';
 import 'package:flutter_application_helpvrywhere/screens/login_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/onboarding_gate.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
 import 'package:flutter_application_helpvrywhere/state/app_settings.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -87,7 +88,9 @@ class MyApp extends StatelessWidget {
           },
           initialRoute: '/',
           routes: {
-            '/': (context) => const AuthWrapper(),
+            // Entry point: gate decides between Welcome and AuthWrapper
+            '/': (context) => const OnboardingGate(),
+            '/auth': (context) => const AuthWrapper(),
             '/login': (context) => const LoginScreen(),
             '/nearby-request': (context) => const RequestMapScreen(),
           },

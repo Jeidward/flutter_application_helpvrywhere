@@ -8,7 +8,10 @@ import 'login_screen.dart';
 /// Used both during initial onboarding (Welcome → Persona → here) and as
 /// a "Replay tutorial" entry from the Profile dialog.
 class OnboardingTourScreen extends StatefulWidget {
-  const OnboardingTourScreen({super.key});
+  /// When true, exits pop back instead of navigating to LoginScreen,
+  /// and the Skip/CTA flow is hidden (user is already signed in).
+  final bool isReplay;
+  const OnboardingTourScreen({super.key, this.isReplay = false});
 
   @override
   State<OnboardingTourScreen> createState() => _OnboardingTourScreenState();
@@ -87,14 +90,21 @@ class _OnboardingTourScreenState extends State<OnboardingTourScreen> {
     );
   }
 
-  /// Exit the tour. For first-run onboarding this means going to LoginScreen.
-  /// (Replay-from-Profile case will simply pop back via the appbar back.)
-  void _exitToLogin() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
+  /// Exit the tour without creating an account (Skip / Sign in).
+  /// In onboarding mode, replaces the stack with LoginScreen.
+  /// In replay mode, pops back to whatever pushed the tour (e.g. Profile).
+  void _exit({bool autoOpenRegister = false}) {
+    if (widget.isReplay) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LoginScreen(autoOpenRegister: autoOpenRegister),
+        ),
+        (_) => false,
+      );
+    }
   }
 
   @override
@@ -112,10 +122,10 @@ class _OnboardingTourScreenState extends State<OnboardingTourScreen> {
                 children: [
                   if (!_isLast)
                     TextButton(
-                      onPressed: _exitToLogin,
-                      child: const Text(
-                        'Skip',
-                        style: TextStyle(
+                      onPressed: () => _exit(),
+                      child: Text(
+                        widget.isReplay ? 'Close' : 'Skip',
+                        style: const TextStyle(
                           fontSize: 14,
                           color: _subtleText,
                           fontWeight: FontWeight.w600,
@@ -158,14 +168,34 @@ class _OnboardingTourScreenState extends State<OnboardingTourScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: _isLast
-                  ? Column(
+                  ? (widget.isReplay
+                      // Replay-from-Profile: single Done button → pop
+                      ? SizedBox(
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: () => _exit(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _linkBlue,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                            ),
+                            child: const Text(
+                              'Done',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        )
+                      : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         SizedBox(
                           height: 52,
                           child: ElevatedButton(
-                            // TODO(B4+B5+B6): wire to LoginScreen w/ auto registration dialog
-                            onPressed: _exitToLogin,
+                            onPressed: () => _exit(autoOpenRegister: true),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _linkBlue,
                               foregroundColor: Colors.white,
@@ -185,7 +215,7 @@ class _OnboardingTourScreenState extends State<OnboardingTourScreen> {
                         SizedBox(
                           height: 52,
                           child: OutlinedButton(
-                            onPressed: _exitToLogin,
+                            onPressed: () => _exit(),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: _darkBg,
                               side: const BorderSide(color: Color(0xFFE5E7EB)),
@@ -201,17 +231,23 @@ class _OnboardingTourScreenState extends State<OnboardingTourScreen> {
                           ),
                         ),
                       ],
-                    )
+                    ))
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         TextButton(
-                          onPressed: _page == 0 ? null : _back,
+                          // On first page: in onboarding mode, pop back
+                          // to PersonaScreen; in replay mode, disable.
+                          onPressed: _page == 0
+                              ? (widget.isReplay
+                                  ? null
+                                  : () => Navigator.pop(context))
+                              : _back,
                           child: Text(
                             'Back',
                             style: TextStyle(
                               fontSize: 14,
-                              color: _page == 0
+                              color: (_page == 0 && widget.isReplay)
                                   ? const Color(0xFFD1D5DB)
                                   : _subtleText,
                               fontWeight: FontWeight.w600,

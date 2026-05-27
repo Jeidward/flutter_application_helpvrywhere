@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/onboarding_prefs.dart';
 import '../theme/profile_styles.dart';
-import 'tutorial_screen.dart';
 
 const _smsExpirySeconds = 300; // 5 minutes
 const _resendCooldownSeconds = 30;
@@ -160,19 +160,26 @@ class _RegistrationDialogState extends State<_RegistrationDialog> {
         smsCode: _smsCodeController.text.trim(),
       );
 
+      // Pull the persona choice the user made during onboarding.
+      final seniorMode = await OnboardingPrefs.getSeniorMode();
+
       await _authService.registerWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         username: _usernameController.text.trim(),
         phoneCredential: phoneCredential,
+        seniorMode: seniorMode,
       );
+
+      // Persona has been written to Firestore — clear local copy.
+      await OnboardingPrefs.clear();
 
       _expiryTimer?.cancel();
       _resendTimer?.cancel();
 
       if (!mounted) return;
       Navigator.pop(context); // close registration dialog
-      await showTutorialDialog(context);
+      // Tutorial is now part of the onboarding flow, not post-registration.
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = _getErrorMessage(e.code));
     } catch (_) {

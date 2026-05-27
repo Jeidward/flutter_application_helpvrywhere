@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/onboarding_prefs.dart';
+import '../state/app_settings.dart';
 import 'onboarding_tour_screen.dart';
 
 /// Asks the user to pick a persona before the tour.
@@ -32,8 +33,12 @@ class _PersonaScreenState extends State<PersonaScreen> {
     final picked = _seniorMode;
     if (picked == null) return;
     await OnboardingPrefs.setSeniorMode(picked);
+    // Apply choice immediately so Tour/Login/Registration preview the
+    // chosen text scale. AuthWrapper will re-sync from Firestore after login.
+    AppSettings.instance.seniorMode.value = picked;
     if (!mounted) return;
-    Navigator.pushReplacement(
+    // Use push (not pushReplacement) so user can return here from Tour.
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const OnboardingTourScreen()),
     );
@@ -70,7 +75,7 @@ class _PersonaScreenState extends State<PersonaScreen> {
               ),
               const SizedBox(height: 24),
               const Text(
-                "Who's using\nHelpEverywhere?",
+                'Pick the mode that\nfits you best',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -85,8 +90,8 @@ class _PersonaScreenState extends State<PersonaScreen> {
               ),
               const SizedBox(height: 28),
               _PersonaCard(
-                title: 'Just for me',
-                description: "I'll be using HelpEverywhere myself.",
+                title: 'Standard mode',
+                description: 'Default text size and layout.',
                 iconBg: _iconBgMint,
                 icon: Icons.person_outline,
                 iconColor: _darkBg,
@@ -98,11 +103,11 @@ class _PersonaScreenState extends State<PersonaScreen> {
               ),
               const SizedBox(height: 12),
               _PersonaCard(
-                title: 'For a senior',
+                title: 'Senior mode',
                 description:
-                    'Bigger text, fewer buttons, AI that walks through tasks step by step.',
+                    'Larger text and simpler layouts to make the app easier to use.',
                 iconBg: _iconBgDark,
-                icon: Icons.shield_outlined,
+                icon: Icons.accessibility_new,
                 iconColor: Colors.white,
                 selected: _seniorMode == true,
                 onTap: () => setState(() => _seniorMode = true),

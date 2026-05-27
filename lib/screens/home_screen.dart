@@ -2,8 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/ai_guide_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/onboarding_tour_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
-import 'package:flutter_application_helpvrywhere/screens/tutorial_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'package:flutter_application_helpvrywhere/screens/help_others.dart';
 import 'package:flutter_application_helpvrywhere/screens/need_help.dart';
@@ -59,7 +59,13 @@ class HomeScreen extends StatelessWidget {
               },
             ),
             IconButton(
-              onPressed: () => showTutorialDialog(context),
+              // Replay onboarding tour (full screen, pops back to home)
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OnboardingTourScreen(isReplay: true),
+                ),
+              ),
               icon: const Icon(Icons.help_outline),
             ),
             Padding(

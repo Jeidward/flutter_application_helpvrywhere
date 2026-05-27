@@ -2,9 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
-import '../state/app_settings.dart'; // [DH]
+import '../state/app_settings.dart'; 
 import '../theme/profile_styles.dart';
+import 'persona_screen.dart'; // debug entry
 import 'phone_verification_screen.dart';
+import 'welcome_screen.dart'; // debug entry
 
 /// Shows the profile dialog with an internal view switcher (main / edit / change password).
 Future<void> showProfileDialog(BuildContext context) async {
@@ -93,7 +95,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     if (ok) _loadUser();
   }
 
-  /// [DH] Persist new senior mode value and reflect it app-wide immediately.
+  /// Persist new senior mode value and reflect it app-wide immediately.
   Future<void> _setSeniorMode(bool value) async {
     AppSettings.instance.seniorMode.value = value; // instant UI update
     await _authService.setSeniorMode(value); // persist to Firestore
@@ -198,7 +200,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             ),
           ),
           const Divider(),
-          // [DH] Senior mode toggle — larger text + simplified layouts
+          // Senior mode toggle — larger text + simplified layouts
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -243,6 +245,45 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             onPressed: _logout,
             style: ProfileStyles.outlined,
             child: const Text('Log Out'),
+          ),
+          // === DEBUG ENTRY POINTS — remove before production ===
+          const SizedBox(height: 16),
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.only(top: 4, bottom: 8),
+            child: Text(
+              'Debug',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                  ),
+                  style: ProfileStyles.outlined,
+                  child: const Text('View Welcome'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PersonaScreen()),
+                  ),
+                  style: ProfileStyles.outlined,
+                  child: const Text('View Persona'),
+                ),
+              ),
+            ],
           ),
         ],
       ),

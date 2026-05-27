@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/onboarding_prefs.dart';
 import 'login_screen.dart';
 import 'persona_screen.dart';
 
@@ -15,6 +16,24 @@ class WelcomeScreen extends StatelessWidget {
   static const _subtleText = Color(0xFF6B7280);
   static const _linkBlue = Color(0xFF5BA7D9);
 
+  Future<void> _onGetStarted(BuildContext context) async {
+    await OnboardingPrefs.setWelcomeSeen();
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PersonaScreen()),
+    );
+  }
+
+  Future<void> _onSignIn(BuildContext context) async {
+    await OnboardingPrefs.setWelcomeSeen();
+    if (!context.mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -26,61 +45,30 @@ class WelcomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(flex: 3),
-              // Centered logo cluster
+              // Splash logo + wordmark reused so onboarding feels
+              // continuous with launch (same pair as flutter_native_splash).
+              // Wordmark already contains the "Community help and request
+              // platform" tagline, so no separate subtitle text is needed.
               Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 96,
-                      height: 96,
-                      decoration: const BoxDecoration(
-                        color: _darkBg,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.white,
-                        size: 52,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    // Decorative people icons under the pin
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.person, color: Color(0xFF6FCF97), size: 22),
-                        SizedBox(width: 4),
-                        Icon(Icons.person, color: _linkBlue, size: 22),
-                      ],
-                    ),
-                  ],
+                child: Image.asset(
+                  'assets/help-vrywhere-logo.png',
+                  width: 340,
+                  fit: BoxFit.contain,
                 ),
               ),
-              const SizedBox(height: 36),
-              const Text(
-                'HelpEverywhere',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: _darkBg,
-                  height: 1.1,
+              const SizedBox(height: 24),
+              Center(
+                child: Image.asset(
+                  'assets/branding.png',
+                  width: 260,
+                  fit: BoxFit.contain,
                 ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Your community, ready to help',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: _subtleText),
               ),
               const Spacer(flex: 4),
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const PersonaScreen()),
-                  ),
+                  onPressed: () => _onGetStarted(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _darkBg,
                     foregroundColor: Colors.white,
@@ -98,10 +86,7 @@ class WelcomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               GestureDetector(
-                onTap: () => Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                ),
+                onTap: () => _onSignIn(context),
                 child: const Text.rich(
                   TextSpan(
                     text: 'Already have an account? ',
