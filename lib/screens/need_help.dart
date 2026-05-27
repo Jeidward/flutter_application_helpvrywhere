@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_list_screen.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart'; // For overlay window
-import 'package:flutter/services.dart';
 import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
+import 'package:flutter_application_helpvrywhere/widgets/home_matched_banner.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart'; // For overlay window
 
 class NeedHelpTab extends StatelessWidget {
   const NeedHelpTab({super.key});
@@ -16,6 +17,14 @@ class NeedHelpTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // "Help on the way" toast — invisible until one of this
+            // user's requests gets accepted, then renders the green
+            // rich card with helper info, ETA, and trip code. Also
+            // auto-pushes the door-verify screen when the helper
+            // arrives. Lives on the home tab so the requester always
+            // sees it, no matter where they are in the flow.
+            const HomeMatchedBanner(),
+
             _buildCard(
               icons: Icons.smart_toy,
               label: "AI support",

@@ -2,14 +2,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/nearby_request.dart';
 import 'package:flutter_application_helpvrywhere/models/request_model.dart';
+import 'package:flutter_application_helpvrywhere/models/trip.dart';
+import 'package:flutter_application_helpvrywhere/screens/arrived_requester_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/matched_helper_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/navigation_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_directions_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/location_service.dart';
 import 'package:flutter_application_helpvrywhere/services/mapbox_directions_service.dart';
 import 'package:flutter_application_helpvrywhere/services/nearby_request_service.dart';
 import 'package:flutter_application_helpvrywhere/services/request_service.dart';
+import 'package:flutter_application_helpvrywhere/services/trip_service.dart';
+import 'package:flutter_application_helpvrywhere/services/user_service.dart';
 import 'package:flutter_application_helpvrywhere/theme/app_theme.dart';
 import 'package:flutter_application_helpvrywhere/widgets/category_tag.dart';
+import 'package:flutter_application_helpvrywhere/widgets/confirm_help_sheet.dart';
+import 'package:flutter_application_helpvrywhere/widgets/matched_requester_toast.dart';
 import 'package:flutter_application_helpvrywhere/widgets/pill_button.dart';
 import 'package:flutter_application_helpvrywhere/widgets/safety_banner.dart';
 import 'package:flutter_application_helpvrywhere/widgets/stat_card.dart';
@@ -152,6 +159,10 @@ class RequestDetailScreen extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
+          // ── Help-on-the-way toast (requester-side, when this is
+          // your request and a helper has confirmed) ──────────────────
+          _MaybeMatchedToast(request: request),
+
           // ── Requester header ──────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
@@ -319,6 +330,83 @@ class RequestDetailScreen extends StatelessWidget {
   }
 }
 
+/// Renders [MatchedRequesterToast] when the current user is the
+/// requester AND a [Trip] exists for this request.
+///
+/// Also reacts to live status changes:
+///   • When the trip flips to [TripStatus.atDoor] (helper geofenced
+///     in or tapped "I'm at the door"), this widget auto-pushes
+///     [ArrivedRequesterScreen] so the requester immediately sees
+///     the trip-code verification challenge — no manual refresh.
+///   • When status reaches [TripStatus.completed], the toast hides
+///     itself (the trip is done; nothing to surface).
+class _MaybeMatchedToast extends StatefulWidget {
+  const _MaybeMatchedToast({required this.request});
+
+  final NearbyRequest request;
+
+  @override
+  State<_MaybeMatchedToast> createState() => _MaybeMatchedToastState();
+}
+
+class _MaybeMatchedToastState extends State<_MaybeMatchedToast> {
+  /// Stops the same trip from being announced twice if the stream
+  /// re-emits while ArrivedRequesterScreen is already on top.
+  String? _announcedAtDoorTripId;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final isMine =
+        currentUid != null && widget.request.requesterUserId == currentUid;
+    if (!isMine) return const SizedBox.shrink();
+
+    return StreamBuilder<Trip?>(
+      stream: TripService().watchByRequestId(widget.request.id),
+      builder: (ctx, snap) {
+        // If the Firestore stream errored, log it so the
+        // "toast never appears" symptom doesn't stay invisible.
+        if (snap.hasError) {
+          debugPrint(
+            '_MaybeMatchedToast stream error for '
+            'request ${widget.request.id}: ${snap.error}',
+          );
+        }
+        final trip = snap.data;
+        if (trip == null) return const SizedBox.shrink();
+        if (trip.status == TripStatus.completed) {
+          return const SizedBox.shrink();
+        }
+
+        // Auto-route to the arrival screen the moment the trip flips
+        // to atDoor. Guard against duplicate pushes from re-renders.
+        if (trip.status == TripStatus.atDoor &&
+            _announcedAtDoorTripId != trip.id) {
+          _announcedAtDoorTripId = trip.id;
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            // Look up the helper's display name so the arrival screen
+            // can render "Margaret is here." rather than "Helper is here."
+            final helperName =
+                await _resolveHelperName(trip.helperUid);
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ArrivedRequesterScreen(
+                  trip: trip,
+                  helperName: helperName,
+                ),
+              ),
+            );
+          });
+        }
+
+        return MatchedRequesterToast(trip: trip);
+      },
+    );
+  }
+}
+
 /// Builds the requester subtitle line. Handles two real-data quirks:
 ///   • `neighborhood` may be null when the requester used GPS instead of
 ///     typing an address.
@@ -334,142 +422,122 @@ String _subtitleFor(NearbyRequest r) {
   return parts.join(' · ');
 }
 
-/// Shows a confirmation bottom-sheet recapping the request and a safety
-/// reminder before committing to it. On confirm, it atomically claims
-/// the request, then asks the volunteer whether they want to start
-/// navigation now or later. Picking "Maybe later" leaves the request
-/// claimed — it will appear in the active-request banner on the map
-/// screen so the volunteer can start navigation whenever they're ready.
+/// **Entry point for the "I can help" / "Offer help" buttons.**
 ///
-/// Use this as the entry point for the "I can help" / "Offer help"
-/// buttons — never call the lower-level helpers directly from a
-/// list-card tap, since the claim is irreversible from the volunteer's
-/// side once it succeeds.
+/// The full Step 1 → Step 2 flow:
+///   1. Show the rich [ConfirmHelpSheet] (ETA + distance + AI checklist
+///      + free-text note). If the volunteer backs out → nothing happens.
+///   2. Atomically claim the request via [RequestService.acceptRequest].
+///      If someone else won the race → SnackBar, abort.
+///   3. Create the matching [Trip] doc in Firestore with the commitment
+///      data — this is the single source of truth both phones will
+///      stream from for the rest of the journey.
+///   4. Push [MatchedHelperScreen] (the dark-navy "you're linked" hero
+///      with the trip code). If the volunteer taps "Start navigation"
+///      there, kick off [startNavigationForRequest]. Otherwise the
+///      trip stays in `confirmed` status and surfaces in the active-
+///      request banner on the map screen for later.
+///
+/// Never call the lower-level [_claimRequest] / [TripService] /
+/// navigation helpers directly from a list-card tap — go through this
+/// orchestrator so the volunteer always sees the confirm sheet first.
 Future<void> confirmOfferHelp(
   BuildContext context, {
   required NearbyRequest request,
 }) async {
-  // 1. Pre-accept confirmation
-  final confirmed = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(AppRadius.sheet),
-      ),
-    ),
-    builder: (sheetCtx) => _OfferHelpSheet(request: request),
-  );
-  if (confirmed != true || !context.mounted) return;
+  // Step 1 — confirmation sheet
+  final commitment = await ConfirmHelpSheet.show(context, request: request);
+  if (commitment == null || !context.mounted) return;
 
-  // 2. Atomic claim
+  // Step 2 — atomic claim
   final claimed = await _claimRequest(context, request: request);
   if (!claimed || !context.mounted) return;
 
-  // 3. Ask: navigate now or later?
-  final navigateNow = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(AppRadius.sheet),
+  // Step 3 — create the trip doc
+  final trip = await _createTripForCommitment(
+    context,
+    request: request,
+    commitment: commitment,
+  );
+  if (trip == null || !context.mounted) return;
+
+  // Resolve helper display name for the matched screen.
+  final auth = FirebaseAuth.instance.currentUser!;
+  final helperName = await _resolveHelperName(auth.uid);
+  if (!context.mounted) return;
+
+  // Step 4 — push the matched screen. Pops with `true` if the user
+  // taps "Start navigation"; `null` if they back out.
+  final startNav = await Navigator.of(context).push<bool>(
+    MaterialPageRoute(
+      builder: (_) => MatchedHelperScreen(
+        request: request,
+        trip: trip,
+        helperInitials: _initialsFromName(helperName),
+        helperDisplayName: helperName,
       ),
     ),
-    builder: (sheetCtx) => _AcceptedSheet(request: request),
   );
 
-  if (navigateNow == true && context.mounted) {
+  if (startNav == true && context.mounted) {
     await startNavigationForRequest(context, request: request);
   }
 }
 
-/// Bottom-sheet body for [confirmOfferHelp]. Returns `true` via
-/// `Navigator.pop(true)` when the user confirms.
-class _OfferHelpSheet extends StatelessWidget {
-  const _OfferHelpSheet({required this.request});
-
-  final NearbyRequest request;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-            ),
-            Text(
-              'Offer help?',
-              style: t.titleLarge?.copyWith(fontSize: 22),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${request.requesterName} · ${request.distanceLabel} away',
-              style: t.bodySmall?.copyWith(fontSize: 13),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                CategoryTag.fromCategory(request.category),
-                CategoryTag.meta('${request.estimatedLabel} task'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              request.title,
-              style: t.titleSmall?.copyWith(fontSize: 17, height: 1.3),
-            ),
-            const SizedBox(height: 16),
-            const SafetyBanner(),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: PillButton.outline(
-                    label: 'Cancel',
-                    height: 48,
-                    fontSize: 14,
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: PillButton.primary(
-                    label: 'Yes, I can help',
-                    icon: Icons.favorite_rounded,
-                    height: 48,
-                    fontSize: 14,
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+/// Creates the trip Firestore doc once the request has been claimed.
+/// Wraps [TripService.createForAcceptedRequest], surfaces a SnackBar
+/// on failure, and returns the freshly-created [Trip] (which carries
+/// the deterministic code like "BLU · 47").
+Future<Trip?> _createTripForCommitment(
+  BuildContext context, {
+  required NearbyRequest request,
+  required HelpCommitment commitment,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final auth = FirebaseAuth.instance.currentUser!;
+  try {
+    return await TripService().createForAcceptedRequest(
+      requestId: request.id,
+      requesterUid: request.requesterUserId,
+      helperUid: auth.uid,
+      etaMinutes: commitment.etaMinutes,
+      distanceKm: request.distanceKm,
+      bringList: commitment.items,
+      helperNote: commitment.helperNote,
     );
+  } on FirebaseException catch (e) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Could not start the trip: ${e.message}')),
+    );
+    return null;
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Could not start the trip: $e')),
+    );
+    return null;
   }
+}
+
+/// Looks up the helper's display name from the `users` collection.
+/// Falls back to "You" so the matched-screen never renders a blank
+/// avatar.
+Future<String> _resolveHelperName(String uid) async {
+  try {
+    final name = await UserService().getUsername(uid);
+    if (name.isEmpty || name == 'Unknown') return 'You';
+    return name;
+  } catch (_) {
+    return 'You';
+  }
+}
+
+/// "Margaret K." → "MK". Mirrors [NearbyRequest.requesterInitials].
+String _initialsFromName(String name) {
+  final parts =
+      name.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first[0].toUpperCase();
+  return (parts.first[0] + parts.last[0]).toUpperCase();
 }
 
 /// Atomically claims the request for the current volunteer. Shows a
@@ -529,11 +597,13 @@ Future<bool> _claimRequest(
 
 /// Gets the volunteer's GPS, fetches a walking route from Mapbox, and
 /// pushes the live [NavigationScreen]. Assumes the request is already
-/// claimed by this volunteer (otherwise the active-request banner /
-/// helper-side flow would be wrong).
+/// claimed by this volunteer.
 ///
-/// Exposed publicly so the "Start navigation" button on the
-/// active-request banner can launch the same flow without re-claiming.
+/// When called from a "Help on the way" entry point, also looks up
+/// the matching [Trip] doc so the navigation screen can push live
+/// helper position to Firestore and trigger the arrival handshake on
+/// geofence. The "Directions" pill on the detail screen calls this
+/// without a trip — turn-by-turn only, no Firestore sync.
 Future<void> startNavigationForRequest(
   BuildContext context, {
   required NearbyRequest request,
@@ -583,6 +653,13 @@ Future<void> startNavigationForRequest(
     return;
   }
 
+  // 3. Look up the active trip for this request (if any). Lets the
+  // nav screen sync helper position back to Firestore.
+  Trip? trip;
+  try {
+    trip = await TripService().findByRequestId(request.id);
+  } catch (_) {/* not fatal — proceed without trip sync */}
+
   navigator.pop(); // close progress
 
   if (route == null || route.steps.isEmpty) {
@@ -594,7 +671,8 @@ Future<void> startNavigationForRequest(
     return;
   }
 
-  // 3. Push navigation
+  // 4. Push navigation. Pass the trip so the nav screen can push
+  // helper GPS + flip status to enRoute / atDoor.
   await navigator.push(
     MaterialPageRoute(
       builder: (_) => NavigationScreen(
@@ -602,105 +680,16 @@ Future<void> startNavigationForRequest(
         route: route!,
         startLat: startLat,
         startLng: startLng,
+        trip: trip,
       ),
     ),
   );
 }
 
-/// Bottom-sheet body shown right after a successful claim. Lets the
-/// volunteer pick "Maybe later" (request stays claimed, banner appears
-/// on the map screen) or "Start navigation" (kick off Mapbox routing).
-class _AcceptedSheet extends StatelessWidget {
-  const _AcceptedSheet({required this.request});
-
-  final NearbyRequest request;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-            ),
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.lightGreen,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: AppColors.primaryGreen,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    "You're helping!",
-                    style: t.titleLarge?.copyWith(fontSize: 22),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'You accepted "${request.title}". You can start turn-by-turn '
-              'navigation now, or any time later from the active-request '
-              'banner on the Nearby requests screen.',
-              style: t.bodyMedium,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: PillButton.outline(
-                    label: 'Maybe later',
-                    height: 48,
-                    fontSize: 14,
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: PillButton.primary(
-                    label: 'Start navigation',
-                    icon: Icons.near_me_rounded,
-                    height: 48,
-                    fontSize: 14,
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// NOTE: the old `_AcceptedSheet` ("Maybe later" / "Start navigation"
+// bottom sheet) lived here. It was replaced by the design-handoff
+// [MatchedHelperScreen] — the dark-navy "you're linked" hero with the
+// trip code. See `lib/screens/matched_helper_screen.dart`.
 
 // ---------------------------------------------------------------------------
 // Avatar — initials in a lightBlue circle with a subtle border ring.
