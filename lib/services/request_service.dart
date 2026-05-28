@@ -25,6 +25,19 @@ class RequestService {
         );
   }
 
+  Stream<List<RequestModel>> getAcceptedRequests() {
+    return _db
+        .collection(collection)
+        .where('status', isEqualTo: RequestStatus.accepted.name)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => RequestModel.fromMap(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
   // READ EVERY REQUEST FOR ONE USER
   Stream<List<RequestModel>> getUserRequests(String userId) {
     return _db
@@ -123,7 +136,7 @@ class RequestService {
     String userA,
     String userB,
   ) {
-    return getRequests().map((requests) {
+    return getAcceptedRequests().map((requests) {
       return requests.where((r) {
         return ((r.userId == userA && r.helperUserId == userB) ||
             (r.userId == userB && r.helperUserId == userA));

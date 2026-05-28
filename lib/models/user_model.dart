@@ -7,6 +7,7 @@ class UserModel {
   final String? photoUrl;           // Profile picture — auto-filled by Google sign-in, null for email users
   final DateTime? phoneVerifiedUntil; // null = never verified, non-null = verification expiry date (180 days from verification)
   final DateTime createdAt;         // Timestamp when the user account was created
+  final bool seniorMode;            // true = larger text + simplified layouts on key screens
 
   UserModel({
     required this.uid,
@@ -15,6 +16,7 @@ class UserModel {
     this.photoUrl,
     this.phoneVerifiedUntil,
     required this.createdAt,
+    this.seniorMode = false,
   });
 
   /// Creates a UserModel from a Firestore document snapshot
@@ -28,6 +30,7 @@ class UserModel {
           ? (data['phoneVerifiedUntil'] as Timestamp).toDate()
           : null,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
+      seniorMode: data['seniorMode'] ?? false, // default false for legacy users
     );
   }
 
@@ -41,6 +44,7 @@ class UserModel {
           ? Timestamp.fromDate(phoneVerifiedUntil!)
           : null,
       'createdAt': FieldValue.serverTimestamp(),
+      'seniorMode': seniorMode,
     };
   }
 }

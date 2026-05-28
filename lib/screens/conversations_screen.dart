@@ -22,62 +22,92 @@ class ConversationsScreen extends StatelessWidget {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) {
-      return const Scaffold(body: Center(child: Text("Not logged in")));
+      return const Scaffold(
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Messages",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              Center(child: Text("Not logged in")),
+            ],
+          ),
+        ),
+      );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Messages")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "My Conversations",
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
 
-      body: StreamBuilder<List<ConversationModel>>(
-        stream: _conversationService.getUserConversations(currentUser.uid),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+            const SizedBox(height: 12),
 
-          final conversations = snapshot.data!;
-
-          if (conversations.isEmpty) {
-            return const Center(child: Text("No conversations"));
-          }
-
-          return ListView.builder(
-            itemCount: conversations.length,
-            itemBuilder: (context, index) {
-              final conv = conversations[index];
-
-              final otherUserId = conv.users.firstWhere(
-                (id) => id != currentUser.uid,
-              );
-
-              return ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.person)),
-
-                title: FutureBuilder<String>(
-                  future: _getUserName(otherUserId),
-                  builder: (context, snapshot) {
-                    final name = snapshot.data ?? "Loading...";
-                    return Text(name);
-                  },
+            Expanded(
+              child: StreamBuilder<List<ConversationModel>>(
+                stream: _conversationService.getUserConversations(
+                  currentUser.uid,
                 ),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                subtitle: Text(conv.lastMessage),
+                  final conversations = snapshot.data!;
 
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        conversationId: conv.id,
-                        otherUserId: otherUserId,
-                      ),
-                    ),
+                  if (conversations.isEmpty) {
+                    return const Center(child: Text("No conversations"));
+                  }
+
+                  return ListView.builder(
+                    itemCount: conversations.length,
+                    itemBuilder: (context, index) {
+                      final conv = conversations[index];
+
+                      final otherUserId = conv.users.firstWhere(
+                        (id) => id != currentUser.uid,
+                      );
+
+                      return ListTile(
+                        leading: const CircleAvatar(child: Icon(Icons.person)),
+
+                        title: FutureBuilder<String>(
+                          future: _getUserName(otherUserId),
+                          builder: (context, snapshot) {
+                            return Text(snapshot.data ?? "Loading...");
+                          },
+                        ),
+
+                        subtitle: Text(conv.lastMessage),
+
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatScreen(
+                                conversationId: conv.id,
+                                otherUserId: otherUserId,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   );
                 },
-              );
-            },
-          );
-        },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

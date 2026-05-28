@@ -28,6 +28,7 @@ class AuthService {
     required String password,
     required String username,
     required PhoneAuthCredential phoneCredential,
+    bool seniorMode = false,
   }) async {
     // Create Firebase Auth account
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -53,6 +54,7 @@ class AuthService {
       username: username,
       phoneVerifiedUntil: _newPhoneExpiry(),
       createdAt: DateTime.now(),
+      seniorMode: seniorMode,
     );
     await createUserDocument(user);
 
@@ -213,6 +215,14 @@ class AuthService {
     if (photoUrl != null) updates['photoUrl'] = photoUrl;
     if (updates.isEmpty) return;
     await _db.collection('users').doc(uid).update(updates);
+  }
+
+  /// Updates seniorMode flag on the current user's Firestore document.
+  /// Used by Profile toggle and onboarding finish.
+  Future<void> setSeniorMode(bool value) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).update({'seniorMode': value});
   }
 
   /// Changes password for currently signed-in user.
