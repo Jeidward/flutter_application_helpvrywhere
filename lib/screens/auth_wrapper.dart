@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/permissions_service.dart';
 import '../state/app_settings.dart';
 import '../theme/auth_styles.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'permission_gate_screen.dart';
 import 'phone_verification_screen.dart';
 
-/// Listens to auth state and routes between Login / Phone Verification / Home.
+/// Listens to auth state and routes between Login / Phone Verification /
+/// Permission gate / Home.
 /// - Not logged in → LoginScreen
 /// - Logged in but phone unverified or expired → PhoneVerificationRequired
-/// - Logged in and verified → HomeScreen
+/// - Logged in & verified, REQUIRED permissions missing → PermissionGate
+/// - Logged in, verified, permissions granted → HomeScreen
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -23,18 +27,29 @@ class _AuthWrapperState extends State<AuthWrapper> {
   final _authService = AuthService();
 
   /// Caches the user-state load so AuthWrapper doesn't refetch on every build.
-  /// Bumped via [_reload] after verification or logout to force a refresh.
+  /// Bumped via [_reload] after verification, permission grant, or logout.
   int _reloadKey = 0;
 
   void _reload() => setState(() => _reloadKey++);
 
   Future<_AuthState> _loadAuthState(String uid) async {
     final user = await _authService.getUserDocument(uid);
-    if (user == null) return _AuthState(user: null, isVerified: false);
+    if (user == null) {
+      return _AuthState(
+          user: null, isVerified: false, permissionsGranted: false);
+    }
     final isVerified = await _authService.ensurePhoneConsistency(user);
     // Push seniorMode into app-level state so MaterialApp can react.
     AppSettings.instance.seniorMode.value = user.seniorMode;
-    return _AuthState(user: user, isVerified: isVerified);
+    // Permission check only matters after phone verification, but we
+    // resolve it here so the build chain stays a single FutureBuilder.
+    final permissionsGranted =
+        isVerified && await PermissionsService.instance.allRequiredGranted();
+    return _AuthState(
+      user: user,
+      isVerified: isVerified,
+      permissionsGranted: permissionsGranted,
+    );
   }
 
   @override
@@ -61,8 +76,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
             if (state == null || state.user == null) {
               return const _LoadingScreen();
             }
-            if (state.isVerified) return const HomeScreen();
-            return _PhoneVerificationRequiredScreen(onVerified: _reload);
+            if (!state.isVerified) {
+              return _PhoneVerificationRequiredScreen(onVerified: _reload);
+            }
+            if (!state.permissionsGranted) {
+              return PermissionGateScreen(onAllGranted: _reload);
+            }
+            return const HomeScreen();
           },
         );
       },
@@ -73,7 +93,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
 class _AuthState {
   final UserModel? user;
   final bool isVerified;
-  _AuthState({required this.user, required this.isVerified});
+  final bool permissionsGranted;
+  _AuthState({
+    required this.user,
+    required this.isVerified,
+    required this.permissionsGranted,
+  });
 }
 
 class _LoadingScreen extends StatelessWidget {

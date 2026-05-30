@@ -2,11 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/permissions_service.dart';
 import '../state/app_settings.dart';
 import '../theme/auth_styles.dart';
-import 'persona_screen.dart'; // debug entry
 import 'phone_verification_screen.dart';
-import 'welcome_screen.dart'; // debug entry
 
 /// Shows the profile dialog with an internal view switcher (main / edit / change password).
 Future<void> showProfileDialog(BuildContext context) async {
@@ -25,15 +24,35 @@ class _ProfileDialog extends StatefulWidget {
   State<_ProfileDialog> createState() => _ProfileDialogState();
 }
 
-class _ProfileDialogState extends State<_ProfileDialog> {
+class _ProfileDialogState extends State<_ProfileDialog>
+    with WidgetsBindingObserver {
   final _authService = AuthService();
+  final _permService = PermissionsService.instance;
   Future<UserModel?>? _userFuture;
   _View _currentView = _View.main;
+  final Map<AppPermission, AppPermissionState> _permStates = {};
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUser();
+    _loadPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // After the overlay grant flow leaves for system settings, re-check
+    // when we return so the rows reflect the new state.
+    if (state == AppLifecycleState.resumed) {
+      _loadPermissions();
+    }
   }
 
   void _loadUser() {
@@ -42,6 +61,35 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     setState(() {
       _userFuture = _authService.getUserDocument(uid);
     });
+  }
+
+  Future<void> _loadPermissions() async {
+    final next = <AppPermission, AppPermissionState>{};
+    for (final p in PermissionsService.all) {
+      next[p] = await _permService.check(p);
+    }
+    if (!mounted) return;
+    setState(() {
+      _permStates
+        ..clear()
+        ..addAll(next);
+    });
+  }
+
+  Future<void> _onPermissionTapped(AppPermission perm) async {
+    final current = _permStates[perm] ?? AppPermissionState.denied;
+    AppPermissionState next;
+    if (current == AppPermissionState.granted ||
+        current == AppPermissionState.permanentlyDenied ||
+        current == AppPermissionState.restricted) {
+      // Granted state can only be flipped back via system settings, and
+      // permanently denied also requires settings. Open it either way.
+      await _permService.openSettings();
+      return; // lifecycle observer will re-poll on resume
+    }
+    next = await _permService.request(perm);
+    if (!mounted) return;
+    setState(() => _permStates[perm] = next);
   }
 
   void _goTo(_View view) => setState(() => _currentView = view);
@@ -291,6 +339,33 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               ),
             ),
           ]),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              'Permissions',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AuthStyles.subtleText,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          _InfoCard(
+            children: [
+              for (var i = 0; i < PermissionsService.all.length; i++) ...[
+                if (i > 0) const _InfoDivider(),
+                _PermissionRow(
+                  perm: PermissionsService.all[i],
+                  state: _permStates[PermissionsService.all[i]] ??
+                      AppPermissionState.denied,
+                  onTap: () => _onPermissionTapped(
+                      PermissionsService.all[i]),
+                ),
+              ],
+            ],
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => _goTo(_View.edit),
@@ -316,46 +391,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
                   fontSize: 15, fontWeight: FontWeight.w600),
             ),
             child: const Text('Log out'),
-          ),
-          const SizedBox(height: 20),
-          const _InfoDivider(),
-          const Padding(
-            padding: EdgeInsets.only(top: 6, bottom: 10),
-            child: Text(
-              'Debug',
-              style: TextStyle(
-                color: AuthStyles.subtleText,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const WelcomeScreen()),
-                  ),
-                  style: AuthStyles.outlinedPill(),
-                  child: const Text('View Welcome'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const PersonaScreen()),
-                  ),
-                  style: AuthStyles.outlinedPill(),
-                  child: const Text('View Persona'),
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -425,6 +460,95 @@ class _InfoRow extends StatelessWidget {
           ),
           ?trailing,
         ],
+      ),
+    );
+  }
+}
+
+class _PermissionRow extends StatelessWidget {
+  final AppPermission perm;
+  final AppPermissionState state;
+  final VoidCallback onTap;
+  const _PermissionRow({
+    required this.perm,
+    required this.state,
+    required this.onTap,
+  });
+
+  IconData get _icon {
+    switch (perm) {
+      case AppPermission.overlay:
+        return Icons.layers_outlined;
+      case AppPermission.location:
+        return Icons.location_on_outlined;
+      case AppPermission.microphone:
+        return Icons.mic_none_outlined;
+    }
+  }
+
+  String _statusLabel(bool isRequired) {
+    switch (state) {
+      case AppPermissionState.granted:
+        return 'Granted';
+      case AppPermissionState.permanentlyDenied:
+      case AppPermissionState.restricted:
+        return 'Blocked';
+      case AppPermissionState.denied:
+        return isRequired ? 'Required' : 'Optional';
+    }
+  }
+
+  Color _statusColor() {
+    switch (state) {
+      case AppPermissionState.granted:
+        return AuthStyles.badgeGreenText;
+      case AppPermissionState.permanentlyDenied:
+      case AppPermissionState.restricted:
+        return const Color(0xFFD32F2F);
+      case AppPermissionState.denied:
+        return AuthStyles.subtleText;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final info = AppPermissionInfo.of(perm);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Row(
+          children: [
+            Icon(_icon, size: 20, color: AuthStyles.subtleText),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    info.title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AuthStyles.darkBg,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _statusLabel(info.isRequired),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _statusColor(),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right,
+                size: 18, color: AuthStyles.subtleText),
+          ],
+        ),
       ),
     );
   }
