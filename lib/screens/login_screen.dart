@@ -32,11 +32,18 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     if (widget.autoOpenRegister) {
-      // Schedule after first frame so context is ready for showDialog
+      // Schedule after first frame so context is ready for navigation
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) showRegistrationDialog(context);
+        if (mounted) _openRegister();
       });
     }
+  }
+
+  void _openRegister() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RegistrationScreen()),
+    );
   }
 
   @override
@@ -153,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
 
               TextButton(
-                onPressed: () => showRegistrationDialog(context),
+                onPressed: _openRegister,
                 child: const Text("Don't have an account? Sign up"),
               ),
             ],
