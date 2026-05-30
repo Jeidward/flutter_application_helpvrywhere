@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/onboarding_prefs.dart';
 import '../theme/auth_styles.dart';
+import 'auth_wrapper.dart';
 
 const _smsExpirySeconds = 300; // 5 minutes
 const _resendCooldownSeconds = 30;
@@ -560,8 +561,14 @@ class _PhoneVerificationStepState extends State<_PhoneVerificationStep> {
       _expiryTimer?.cancel();
       _resendTimer?.cancel();
       if (!mounted) return;
-      // Pop Step 2 and Step 1; AuthWrapper takes over from here.
-      Navigator.popUntil(context, (route) => route.isFirst);
+      // Hand off to AuthWrapper. Some entry paths reach this screen with
+      // LoginScreen (not AuthWrapper) at the root of the stack, so popping
+      // alone would leave the user stuck on LoginScreen post-signup.
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
+        (_) => false,
+      );
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = _firebaseError(e.code));
     } catch (_) {

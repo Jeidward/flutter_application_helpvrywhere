@@ -1,25 +1,18 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../theme/profile_styles.dart';
+import '../theme/auth_styles.dart';
 
-/// Shows the forgot-password flow as a dialog popup.
-/// Used by logged-out users from the login screen.
-Future<void> showForgotPasswordDialog(BuildContext context) async {
-  await showDialog(
-    context: context,
-    builder: (_) => const _ForgotPasswordDialog(),
-  );
-}
-
-class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog();
+/// Full-screen forgot-password flow. Sends a Firebase reset email, then
+/// shows a confirmation state with a button back to login.
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
@@ -52,77 +45,105 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return Scaffold(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Reset Password',
-                      style: TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
+                  AuthBackButton(onTap: () => Navigator.pop(context)),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (_sent)
-                const Text(
-                  'If an account exists for that email, '
-                  'a reset link has been sent.\n\n'
-                  'Please check your inbox.',
-                  style: TextStyle(fontSize: 16),
-                )
-              else
-                Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Enter your account email and we will send you '
-                        'a link to reset your password.',
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: ProfileStyles.inputDecoration('Email'),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter your email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _send,
-                        style: ProfileStyles.primary,
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Send Reset Link'),
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 20),
+              Text(
+                _sent ? 'Check your inbox' : 'Reset password',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: AuthStyles.darkBg,
+                  height: 1.2,
                 ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _sent
+                    ? 'If an account exists for that email, a reset link has been sent. Please check your inbox.'
+                    : 'Enter your account email and we will send you a link to reset your password.',
+                style: const TextStyle(
+                    fontSize: 14, color: AuthStyles.subtleText, height: 1.5),
+              ),
+              const SizedBox(height: 28),
+              Expanded(
+                child: _sent
+                    ? const SizedBox.shrink()
+                    : SingleChildScrollView(
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const _FieldLabel('Email'),
+                              TextFormField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration:
+                                    AuthStyles.input('you@neighborhood.app'),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Please enter your email';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+              SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _sent
+                      ? () => Navigator.pop(context)
+                      : (_isLoading ? null : _send),
+                  style: AuthStyles.primaryPill(),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(_sent ? 'Back to log in' : 'Send reset link'),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
+  final String text;
+  const _FieldLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AuthStyles.darkBg,
         ),
       ),
     );
