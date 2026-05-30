@@ -117,8 +117,13 @@ class _HomeCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
+      // [donghwan] Temporary fix: under senior mode (1.3x text scaling)
+      // the fixed 120px card height was overflowing and the title text was
+      // breaking the row layout. Switched to minHeight and capped the text
+      // to 2 lines with ellipsis. Please double-check / replace when the
+      // senior home variant lands.
       child: Container(
-        height: 120,
+        constraints: const BoxConstraints(minHeight: 120),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: color,
@@ -145,6 +150,8 @@ class _HomeCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -154,6 +161,8 @@ class _HomeCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontSize: 16,
