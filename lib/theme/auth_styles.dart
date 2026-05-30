@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 
 /// Shared design tokens for the auth + onboarding flow
-/// (Welcome / Persona / Tour / Sign-up / SMS / Login / Forgot password).
-///
-/// The older `profile_styles.dart` uses a different palette and will be
-/// migrated to match this in a later step.
+/// (Welcome / Persona / Tour / Sign-up / SMS / Login / Forgot password /
+/// Profile / Phone verification).
 class AuthStyles {
   static const darkBg = Color(0xFF1A1A1A);
   static const subtleText = Color(0xFF6B7280);
@@ -14,6 +12,7 @@ class AuthStyles {
   static const pillBg = Color(0xFFF3F4F6);
   static const badgeGreenBg = Color(0xFFE8F5EE);
   static const badgeGreenText = Color(0xFF1E7D45);
+  static const softBlueBg = Color(0xFFE7F2FA);
 
   static InputDecoration input(String hint) => InputDecoration(
         hintText: hint,

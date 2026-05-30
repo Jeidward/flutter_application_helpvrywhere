@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../theme/profile_styles.dart';
+import '../theme/auth_styles.dart';
 
-const _codeExpirySeconds = 300;   // 5 minutes
+const _codeExpirySeconds = 300; // 5 minutes
 const _resendCooldownSeconds = 30;
 
 /// Shows the phone verification flow as a dialog popup.
@@ -75,7 +75,7 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
   String? _validatePhoneFormat(String input) {
     final pattern = RegExp(r'^\+[1-9]\d{6,14}$');
     if (!pattern.hasMatch(input)) {
-      return 'Phone must be in international format (e.g. +821012345678)';
+      return 'Phone must be in international (E.164) format';
     }
     return null;
   }
@@ -92,8 +92,8 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
         timer.cancel();
         setState(() {
           _expirySecondsLeft = 0;
-          _verificationId = null; // invalidate
-          _errorMessage = 'Code expired. Please tap Resend to get a new one.';
+          _verificationId = null;
+          _errorMessage = 'Code expired. Tap Resend to get a new one.';
         });
       } else {
         setState(() => _expirySecondsLeft--);
@@ -155,7 +155,7 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
 
   Future<void> _verifyCode() async {
     if (_verificationId == null) {
-      setState(() => _errorMessage = 'Code expired. Please tap Resend.');
+      setState(() => _errorMessage = 'Code expired. Tap Resend.');
       return;
     }
     setState(() {
@@ -210,7 +210,7 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 420),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -220,92 +220,193 @@ class _PhoneVerificationDialogState extends State<_PhoneVerificationDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Phone Verification',
-                      style: TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Verify your phone',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: AuthStyles.darkBg,
+                    ),
+                  ),
                   if (widget.canSkip)
-                    IconButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      icon: const Icon(Icons.close),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => Navigator.pop(context, false),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: AuthStyles.pillBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close,
+                            size: 18, color: AuthStyles.darkBg),
+                      ),
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               if (!_codeSent) ...[
                 const Text(
-                  'Verify your phone number to use the app.',
+                  'We use phone numbers to keep the community real and safe. Standard SMS rates may apply.',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: AuthStyles.subtleText,
+                      height: 1.5),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                const _DialogLabel('Phone number'),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: ProfileStyles.inputDecoration(
-                      'Phone number (e.g. +821012345678)'),
+                  decoration: AuthStyles.input('+1 (555) 010 1234'),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _sendCode,
-                  style: ProfileStyles.primary,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Send Verification Code'),
+                const SizedBox(height: 8),
+                const Text(
+                  'E.164 format · 5 min code expiry',
+                  style: TextStyle(
+                      fontSize: 12, color: AuthStyles.subtleText),
+                ),
+                const SizedBox(height: 14),
+                const _PrivacyBadge(),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _sendCode,
+                    style: AuthStyles.primaryPill(),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Send code'),
+                  ),
                 ),
               ] else ...[
                 Text(
                   _expirySecondsLeft > 0
-                      ? 'Enter the code sent to your phone. '
-                          'Expires in ${_formatTime(_expirySecondsLeft)}.'
+                      ? 'Enter the code we sent. Expires in ${_formatTime(_expirySecondsLeft)}.'
                       : 'Code expired. Tap Resend to get a new one.',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      color: AuthStyles.subtleText,
+                      height: 1.5),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                const _DialogLabel('SMS code'),
                 TextFormField(
                   controller: _codeController,
                   keyboardType: TextInputType.number,
                   decoration:
-                      ProfileStyles.inputDecoration('Verification code'),
+                      AuthStyles.input('Enter the 6-digit code'),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed:
-                      (_isLoading || _verificationId == null) ? null : _verifyCode,
-                  style: ProfileStyles.primary,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Verify'),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed:
+                        (_isLoading || _verificationId == null) ? null : _verifyCode,
+                    style: AuthStyles.primaryPill(),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Verify'),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed:
-                      (_isLoading || _resendSecondsLeft > 0) ? null : _sendCode,
-                  style: ProfileStyles.outlined,
-                  child: Text(_resendSecondsLeft > 0
-                      ? 'Resend in ${_resendSecondsLeft}s'
-                      : 'Resend Code'),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed:
+                        (_isLoading || _resendSecondsLeft > 0) ? null : _sendCode,
+                    style: AuthStyles.outlinedPill(),
+                    child: Text(_resendSecondsLeft > 0
+                        ? 'Resend in ${_resendSecondsLeft}s'
+                        : 'Resend code'),
+                  ),
                 ),
               ],
               if (_errorMessage != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(_errorMessage!,
-                      style: const TextStyle(color: Colors.red)),
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Color(0xFFD32F2F)),
+                  ),
                 ),
               if (widget.canSkip) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: AuthStyles.subtleText),
+                  ),
                 ),
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogLabel extends StatelessWidget {
+  final String text;
+  const _DialogLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AuthStyles.darkBg,
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyBadge extends StatelessWidget {
+  const _PrivacyBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: AuthStyles.badgeGreenBg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.shield_outlined,
+                size: 14, color: AuthStyles.badgeGreenText),
+            SizedBox(width: 6),
+            Text(
+              'Private — never shown publicly',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AuthStyles.badgeGreenText,
+              ),
+            ),
+          ],
         ),
       ),
     );

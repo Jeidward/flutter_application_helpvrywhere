@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../state/app_settings.dart';
-import '../theme/profile_styles.dart';
+import '../theme/auth_styles.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'phone_verification_screen.dart';
@@ -103,39 +103,66 @@ class _PhoneVerificationRequiredScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.phone_android,
-                  size: 80, color: ProfileStyles.avatarIcon),
-              const SizedBox(height: 24),
-              const Text(
-                'Phone Verification Required',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'To continue using the app, please verify your phone number.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: () => _verify(context),
-                style: ProfileStyles.primary,
-                child: const Text('Verify Phone'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () => _logout(context),
-                style: ProfileStyles.outlined,
-                child: const Text('Log Out'),
-              ),
-            ],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: const BoxDecoration(
+                    color: AuthStyles.badgeGreenBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.phone_android,
+                    size: 44,
+                    color: AuthStyles.badgeGreenText,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Verify your phone',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AuthStyles.darkBg,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'To continue using the app, please verify your phone number.',
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: AuthStyles.subtleText,
+                      height: 1.5),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () => _verify(context),
+                    style: AuthStyles.primaryPill(),
+                    child: const Text('Verify phone'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 52,
+                  child: OutlinedButton(
+                    onPressed: () => _logout(context),
+                    style: AuthStyles.outlinedPill(),
+                    child: const Text('Log out'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

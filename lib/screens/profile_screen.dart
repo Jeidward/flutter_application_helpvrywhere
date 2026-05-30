@@ -2,8 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
-import '../state/app_settings.dart'; 
-import '../theme/profile_styles.dart';
+import '../state/app_settings.dart';
+import '../theme/auth_styles.dart';
 import 'persona_screen.dart'; // debug entry
 import 'phone_verification_screen.dart';
 import 'welcome_screen.dart'; // debug entry
@@ -55,16 +55,20 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(title),
         content: Text(content),
         actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(actionLabel),
-          ),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Text('Cancel',
+                style: TextStyle(color: AuthStyles.subtleText)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: AuthStyles.primaryPill(),
+            child: Text(actionLabel),
           ),
         ],
       ),
@@ -76,7 +80,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     final ok = await _confirmAction(
       title: 'Log out?',
       content: 'Are you sure you want to log out?',
-      actionLabel: 'Log Out',
+      actionLabel: 'Log out',
     );
     if (!ok) return;
     await _authService.signOut();
@@ -95,6 +99,20 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     if (ok) _loadUser();
   }
 
+  /// Soft-filled rectangular button used for the main profile actions
+  /// (Edit profile / Change password). Lighter visual weight than the
+  /// pill primary used in full-screen auth flows.
+  static ButtonStyle _softFillButton() => ElevatedButton.styleFrom(
+        backgroundColor: AuthStyles.softBlueBg,
+        foregroundColor: AuthStyles.linkBlue,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle:
+            const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      );
+
   /// Persist new senior mode value and reflect it app-wide immediately.
   Future<void> _setSeniorMode(bool value) async {
     AppSettings.instance.seniorMode.value = value; // instant UI update
@@ -108,13 +126,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 640),
         child: FutureBuilder<UserModel?>(
           future: _userFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const SizedBox(
-                height: 200,
+                height: 240,
                 child: Center(child: CircularProgressIndicator()),
               );
             }
@@ -154,7 +172,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     final phoneNumber = FirebaseAuth.instance.currentUser?.phoneNumber;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -162,99 +180,151 @@ class _ProfileDialogState extends State<_ProfileDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Profile',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
+              const Text(
+                'Profile',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AuthStyles.darkBg,
+                ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    color: AuthStyles.pillBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close,
+                      size: 18, color: AuthStyles.darkBg),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Center(
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: ProfileStyles.avatarBg,
-              backgroundImage: user.photoUrl != null
-                  ? NetworkImage(user.photoUrl!)
-                  : null,
+            child: Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AuthStyles.pillBg,
+                border:
+                    Border.all(color: AuthStyles.cardBorder, width: 1),
+                image: user.photoUrl != null
+                    ? DecorationImage(
+                        image: NetworkImage(user.photoUrl!),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
               child: user.photoUrl == null
                   ? const Icon(Icons.person,
-                      size: 40, color: ProfileStyles.avatarIcon)
+                      size: 40, color: AuthStyles.subtleText)
                   : null,
             ),
           ),
-          const SizedBox(height: 16),
-          _infoRow('Username', user.username),
-          const Divider(),
-          _infoRow('Email', user.email),
-          const Divider(),
-          _infoRow(
-            'Phone',
-            phoneNumber ?? 'Not registered',
-            trailing: IconButton(
-              tooltip: 'Change phone number',
-              onPressed: _changePhone,
-              icon: const Icon(Icons.edit_outlined,
-                  size: 20, color: ProfileStyles.accent),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              user.username,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AuthStyles.darkBg,
+              ),
             ),
           ),
-          const Divider(),
-          // Senior mode toggle — larger text + simplified layouts
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Senior mode',
+          const SizedBox(height: 20),
+          _InfoCard(children: [
+            _InfoRow(label: 'Email', value: user.email),
+            const _InfoDivider(),
+            _InfoRow(
+              label: 'Phone',
+              value: phoneNumber ?? 'Not registered',
+              trailing: IconButton(
+                tooltip: 'Change phone number',
+                onPressed: _changePhone,
+                icon: const Icon(Icons.edit_outlined,
+                    size: 18, color: AuthStyles.linkBlue),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          _InfoCard(children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Senior mode',
                           style: TextStyle(
-                              color: Colors.grey, fontSize: 14)),
-                      SizedBox(height: 4),
-                      Text(
-                        'Larger text and simpler screens',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                    ],
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AuthStyles.darkBg,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Larger text and simpler screens',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AuthStyles.subtleText),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Switch(
-                  value: user.seniorMode,
-                  onChanged: _setSeniorMode,
-                  activeThumbColor: ProfileStyles.accent,
-                ),
-              ],
+                  Switch(
+                    value: user.seniorMode,
+                    onChanged: _setSeniorMode,
+                    activeThumbColor: AuthStyles.linkBlue,
+                  ),
+                ],
+              ),
             ),
-          ),
+          ]),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => _goTo(_View.edit),
-            style: ProfileStyles.primary,
-            child: const Text('Edit Profile'),
+            style: _softFillButton(),
+            child: const Text('Edit profile'),
           ),
           const SizedBox(height: 8),
           ElevatedButton(
             onPressed: () => _goTo(_View.changePassword),
-            style: ProfileStyles.primary,
-            child: const Text('Change Password'),
+            style: _softFillButton(),
+            child: const Text('Change password'),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           OutlinedButton(
             onPressed: _logout,
-            style: ProfileStyles.outlined,
-            child: const Text('Log Out'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFD32F2F),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              side: const BorderSide(color: Color(0xFFFFCDD2)),
+              textStyle: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            child: const Text('Log out'),
           ),
-          // === DEBUG ENTRY POINTS — remove before production ===
-          const SizedBox(height: 16),
-          const Divider(),
+          const SizedBox(height: 20),
+          const _InfoDivider(),
           const Padding(
-            padding: EdgeInsets.only(top: 4, bottom: 8),
+            padding: EdgeInsets.only(top: 6, bottom: 10),
             child: Text(
               'Debug',
               style: TextStyle(
-                color: Colors.grey,
+                color: AuthStyles.subtleText,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -266,9 +336,10 @@ class _ProfileDialogState extends State<_ProfileDialog> {
                 child: OutlinedButton(
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                    MaterialPageRoute(
+                        builder: (_) => const WelcomeScreen()),
                   ),
-                  style: ProfileStyles.outlined,
+                  style: AuthStyles.outlinedPill(),
                   child: const Text('View Welcome'),
                 ),
               ),
@@ -277,9 +348,10 @@ class _ProfileDialogState extends State<_ProfileDialog> {
                 child: OutlinedButton(
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const PersonaScreen()),
+                    MaterialPageRoute(
+                        builder: (_) => const PersonaScreen()),
                   ),
-                  style: ProfileStyles.outlined,
+                  style: AuthStyles.outlinedPill(),
                   child: const Text('View Persona'),
                 ),
               ),
@@ -289,25 +361,90 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       ),
     );
   }
+}
 
-  Widget _infoRow(String label, String value, {Widget? trailing}) {
+class _InfoCard extends StatelessWidget {
+  final List<Widget> children;
+  const _InfoCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AuthStyles.cardBorder),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _InfoDivider extends StatelessWidget {
+  const _InfoDivider();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Divider(height: 1, color: AuthStyles.cardBorder);
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Widget? trailing;
+  const _InfoRow({required this.label, required this.value, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AuthStyles.subtleText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(value, style: const TextStyle(fontSize: 18)),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: AuthStyles.darkBg,
+                  ),
+                ),
               ],
             ),
           ),
           ?trailing,
         ],
+      ),
+    );
+  }
+}
+
+class _DialogFieldLabel extends StatelessWidget {
+  final String text;
+  const _DialogFieldLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AuthStyles.darkBg,
+        ),
       ),
     );
   }
@@ -371,7 +508,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       child: Form(
         key: _formKey,
         child: Column(
@@ -380,19 +517,23 @@ class _EditProfileViewState extends State<_EditProfileView> {
           children: [
             Row(
               children: [
-                IconButton(
-                  onPressed: widget.onBack,
-                  icon: const Icon(Icons.arrow_back),
+                AuthBackButton(onTap: widget.onBack),
+                const SizedBox(width: 12),
+                const Text(
+                  'Edit profile',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AuthStyles.darkBg,
+                  ),
                 ),
-                const Text('Edit Profile',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold)),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 20),
+            const _DialogFieldLabel('Username'),
             TextFormField(
               controller: _usernameController,
-              decoration: ProfileStyles.inputDecoration('Username'),
+              decoration: AuthStyles.input('Your display name'),
               validator: (value) {
                 if (value == null || value.trim().length < 3) {
                   return 'Username must be at least 3 characters';
@@ -401,28 +542,31 @@ class _EditProfileViewState extends State<_EditProfileView> {
               },
             ),
             const SizedBox(height: 16),
+            const _DialogFieldLabel('Photo URL (optional)'),
             TextFormField(
               controller: _photoUrlController,
-              decoration:
-                  ProfileStyles.inputDecoration('Photo URL (optional)'),
+              decoration: AuthStyles.input('https://...'),
             ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(_errorMessage!,
+                  style: const TextStyle(color: Color(0xFFD32F2F))),
+            ],
             const SizedBox(height: 24),
-            if (_errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(_errorMessage!,
-                    style: const TextStyle(color: Colors.red)),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                style: AuthStyles.primaryPill(),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save'),
               ),
-            ElevatedButton(
-              onPressed: _isSaving ? null : _save,
-              style: ProfileStyles.primary,
-              child: _isSaving
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save'),
             ),
           ],
         ),
@@ -452,6 +596,9 @@ class _ChangePasswordViewState extends State<_ChangePasswordView> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -500,10 +647,25 @@ class _ChangePasswordViewState extends State<_ChangePasswordView> {
     }
   }
 
+  InputDecoration _passwordDeco(
+      String hint, bool obscured, VoidCallback toggle) {
+    return AuthStyles.input(hint).copyWith(
+      suffixIcon: IconButton(
+        icon: Icon(
+          obscured
+              ? Icons.visibility_off_outlined
+              : Icons.visibility_outlined,
+          color: AuthStyles.subtleText,
+        ),
+        onPressed: toggle,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       child: Form(
         key: _formKey,
         child: Column(
@@ -512,20 +674,28 @@ class _ChangePasswordViewState extends State<_ChangePasswordView> {
           children: [
             Row(
               children: [
-                IconButton(
-                  onPressed: widget.onBack,
-                  icon: const Icon(Icons.arrow_back),
+                AuthBackButton(onTap: widget.onBack),
+                const SizedBox(width: 12),
+                const Text(
+                  'Change password',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AuthStyles.darkBg,
+                  ),
                 ),
-                const Text('Change Password',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold)),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 20),
+            const _DialogFieldLabel('Current password'),
             TextFormField(
               controller: _currentPasswordController,
-              obscureText: true,
-              decoration: ProfileStyles.inputDecoration('Current password'),
+              obscureText: _obscureCurrent,
+              decoration: _passwordDeco(
+                'Enter your current password',
+                _obscureCurrent,
+                () => setState(() => _obscureCurrent = !_obscureCurrent),
+              ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'Please enter your current password';
@@ -534,26 +704,32 @@ class _ChangePasswordViewState extends State<_ChangePasswordView> {
               },
             ),
             const SizedBox(height: 16),
+            const _DialogFieldLabel('New password'),
             TextFormField(
               controller: _newPasswordController,
-              obscureText: true,
-              decoration: ProfileStyles.inputDecoration('New password'),
+              obscureText: _obscureNew,
+              decoration: _passwordDeco(
+                'At least 6 characters',
+                _obscureNew,
+                () => setState(() => _obscureNew = !_obscureNew),
+              ),
               validator: (value) {
                 if (value == null || value.length < 6) {
                   return 'Password must be at least 6 characters';
-                }
-                if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
-                  return 'Password must contain at least one special character';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
+            const _DialogFieldLabel('Confirm new password'),
             TextFormField(
               controller: _confirmPasswordController,
-              obscureText: true,
-              decoration:
-                  ProfileStyles.inputDecoration('Confirm new password'),
+              obscureText: _obscureConfirm,
+              decoration: _passwordDeco(
+                'Re-enter new password',
+                _obscureConfirm,
+                () => setState(() => _obscureConfirm = !_obscureConfirm),
+              ),
               validator: (value) {
                 if (value != _newPasswordController.text) {
                   return 'Passwords do not match';
@@ -561,23 +737,26 @@ class _ChangePasswordViewState extends State<_ChangePasswordView> {
                 return null;
               },
             ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(_errorMessage!,
+                  style: const TextStyle(color: Color(0xFFD32F2F))),
+            ],
             const SizedBox(height: 24),
-            if (_errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(_errorMessage!,
-                    style: const TextStyle(color: Colors.red)),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _changePassword,
+                style: AuthStyles.primaryPill(),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Change password'),
               ),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _changePassword,
-              style: ProfileStyles.primary,
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Change Password'),
             ),
           ],
         ),
