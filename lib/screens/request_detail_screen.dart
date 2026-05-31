@@ -13,6 +13,7 @@ import 'package:flutter_application_helpvrywhere/services/nearby_request_service
 import 'package:flutter_application_helpvrywhere/services/request_service.dart';
 import 'package:flutter_application_helpvrywhere/services/trip_service.dart';
 import 'package:flutter_application_helpvrywhere/services/user_service.dart';
+import 'package:flutter_application_helpvrywhere/services/viewer_presence_service.dart';
 import 'package:flutter_application_helpvrywhere/theme/app_theme.dart';
 import 'package:flutter_application_helpvrywhere/widgets/category_tag.dart';
 import 'package:flutter_application_helpvrywhere/widgets/confirm_help_sheet.dart';
@@ -159,6 +160,12 @@ class RequestDetailScreen extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
+          // Registers/de-registers this user as an active viewer of
+          // the request so the requester's "N neighbours are
+          // checking" counter on the home tab stays accurate. Renders
+          // nothing — it's a presence side-effect.
+          _ViewerPresenceTracker(requestId: request.id),
+
           // ── Help-on-the-way toast (requester-side, when this is
           // your request and a helper has confirmed) ──────────────────
           _MaybeMatchedToast(request: request),
@@ -772,4 +779,41 @@ class _ActionBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Invisible widget that, while mounted, registers the current user
+/// as an active viewer of [requestId] via [ViewerPresenceService].
+/// Cleans up on dispose. Inserted at the top of the detail screen's
+/// `ListView` so its lifecycle matches the screen exactly.
+class _ViewerPresenceTracker extends StatefulWidget {
+  const _ViewerPresenceTracker({required this.requestId});
+  final String requestId;
+
+  @override
+  State<_ViewerPresenceTracker> createState() =>
+      _ViewerPresenceTrackerState();
+}
+
+class _ViewerPresenceTrackerState extends State<_ViewerPresenceTracker> {
+  PresenceHandle? _handle;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _handle = ViewerPresenceService().startViewing(
+      requestId: widget.requestId,
+      viewerUid: uid,
+    );
+  }
+
+  @override
+  void dispose() {
+    _handle?.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

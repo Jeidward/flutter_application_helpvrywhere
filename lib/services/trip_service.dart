@@ -157,8 +157,14 @@ class TripService {
   }
 
   /// Streams every trip currently assigned to [helperUid] that isn't
-  /// yet completed. Used by the helper's home screen to surface an
-  /// "ongoing trip" banner if they backgrounded mid-route.
+  /// yet completed. Powers the "You're helping …" card on the helper's
+  /// home tab so a backgrounded trip can always be resumed.
+  ///
+  /// **No `orderBy`** — combining `whereIn` with an `orderBy` on a
+  /// different field forces a composite index. We sort client-side
+  /// instead (callers pick the most-recent trip), mirroring
+  /// [watchActiveForRequester]. `handleError` keeps a missing-index /
+  /// rules error from killing the stream — the card just shows nothing.
   Stream<List<Trip>> watchActiveForHelper(String helperUid) {
     return _trips
         .where('helperUid', isEqualTo: helperUid)
@@ -167,8 +173,10 @@ class TripService {
           TripStatus.enRoute.wire,
           TripStatus.atDoor.wire,
         ])
-        .orderBy('createdAt', descending: true)
         .snapshots()
+        .handleError((Object e, StackTrace st) {
+          debugPrint('TripService.watchActiveForHelper error: $e');
+        })
         .map((q) =>
             q.docs.map((d) => Trip.fromMap(d.data(), d.id)).toList());
   }
