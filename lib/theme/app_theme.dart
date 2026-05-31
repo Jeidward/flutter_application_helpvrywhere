@@ -30,13 +30,19 @@ class AppColors {
   // Safety banner
   static const safetyText = Color(0xFF065F46);
   static const safetyTitle = Color(0xFF064E3B);
+
+  // "Help on the way" flow tokens (matches the design handoff).
+  static const handleGray = Color(0xFFD6D9E0);     // drag handle
+  static const indigoBlend = Color(0xFF6366F1);    // AI chip gradient end
+  static const placeholder = Color(0xFF9CA3AF);    // input placeholders
 }
 
 class AppRadius {
   static const card = 16.0;
   static const tile = 14.0;
   static const pill = 999.0;
-  static const sheet = 24.0;
+  static const sheet = 22.0;
+  static const input = 10.0;
 }
 
 class AppSpacing {

@@ -115,57 +115,10 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
     return counts;
   }
 
-  /// Wraps a single Firestore [RequestModel] in a presentation
-  /// [NearbyRequest], computing distance + walking-estimate using the
-  /// current volunteer GPS. Used for both the "nearby" feed and the
-  /// active-request banner so the distance label stays consistent.
-  NearbyRequest _wrap(RequestModel r) {
-    final myLat = _myPosition?.latitude;
-    final myLng = _myPosition?.longitude;
-    final isMine = _myUid != null && r.userId == _myUid;
-    if (!isMine) _ensureUserNameLoaded(r.userId);
-
-    double distance = 0;
-    if (myLat != null && myLng != null) {
-      distance =
-          Geolocator.distanceBetween(myLat, myLng, r.latitude, r.longitude) /
-              1000.0;
-    }
-    final minutes = (distance * 12).round().clamp(1, 999);
-
-    final String displayName;
-    if (isMine) {
-      displayName = 'You';
-    } else {
-      final cached = _userNameCache[r.userId] ?? '';
-      displayName = cached.isNotEmpty ? cached : 'Requester';
-    }
-
-    return NearbyRequest(
-      request: r,
-      requesterName: displayName,
-      distanceKm: distance,
-      estimatedMinutes: minutes,
-    );
-  }
-
-  /// Returns the volunteer's currently-accepted requests (status =
-  /// accepted AND helperUserId = my uid). Most-recent first. Used by
-  /// the active-request banner above the map preview.
-  List<NearbyRequest> _myAccepted(List<RequestModel> raw) {
-    final uid = _myUid;
-    if (uid == null) return const [];
-    final mine = raw
-        .where((r) =>
-            r.status == RequestStatus.accepted && r.helperUserId == uid)
-        .toList()
-      ..sort((a, b) {
-        final at = a.acceptedAt ?? a.createdAt;
-        final bt = b.acceptedAt ?? b.createdAt;
-        return bt.compareTo(at);
-      });
-    return mine.map(_wrap).toList();
-  }
+  // NOTE: `_wrap` + `_myAccepted` (which fed the old "You're helping X"
+  // banner) were removed along with the banner. The helper's active
+  // trip now lives on the home tab as `YourActiveTripCard`, driven by
+  // `TripService.watchActiveForHelper`.
 
   /// Transforms raw Firestore docs into the presentation [NearbyRequest]
   /// view-models. Filters out non-active requests + the inactive
@@ -290,26 +243,14 @@ class _RequestMapScreenState extends State<RequestMapScreen> {
             final raw = snapshot.data ?? [];
             final nearby = _toNearby(raw);
             final counts = _categoryCounts(raw);
-            final myAccepted = _myAccepted(raw);
+            // NOTE: the "You're helping X" banner used to render here
+            // (`_ActiveRequestBanner`). It's been moved to the home tab
+            // as a dedicated card so this screen stays focused on
+            // browsing nearby requests. See `your_active_trip_card.dart`.
 
             return ListView(
               padding: EdgeInsets.zero,
               children: [
-                if (myAccepted.isNotEmpty)
-                  _ActiveRequestBanner(
-                    request: myAccepted.first,
-                    onStartNavigation: () => startNavigationForRequest(
-                      context,
-                      request: myAccepted.first,
-                    ),
-                    onView: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            RequestDetailScreen(request: myAccepted.first),
-                      ),
-                    ),
-                  ),
                 _MapPreview(
                   userLat: _myPosition?.latitude,
                   userLng: _myPosition?.longitude,
@@ -627,126 +568,10 @@ class _MapPreviewState extends State<_MapPreview> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Active-request banner — shown above the map when the volunteer has an
-// accepted request that hasn't been completed yet. Lets them resume the
-// task at any time (start turn-by-turn navigation, or open the detail
-// view) so they're always aware of the commitment they're carrying.
-// ---------------------------------------------------------------------------
-
-class _ActiveRequestBanner extends StatelessWidget {
-  const _ActiveRequestBanner({
-    required this.request,
-    required this.onStartNavigation,
-    required this.onView,
-  });
-
-  final NearbyRequest request;
-  final VoidCallback onStartNavigation;
-  final VoidCallback onView;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Material(
-        color: AppColors.lightGreen,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          onTap: onView,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              border: Border.all(
-                color: AppColors.primaryGreen.withOpacity(0.25),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryGreen.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.volunteer_activism_rounded,
-                        size: 16,
-                        color: AppColors.primaryGreen,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "You're helping ${request.requesterName}",
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.safetyTitle,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            request.title,
-                            style: t.bodyMedium?.copyWith(
-                              fontSize: 14,
-                              color: AppColors.safetyText,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: PillButton.primary(
-                        label: 'Start navigation',
-                        icon: Icons.near_me_rounded,
-                        height: 40,
-                        fontSize: 13,
-                        color: AppColors.primaryGreen,
-                        onPressed: onStartNavigation,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 1,
-                      child: PillButton.outline(
-                        label: 'View',
-                        height: 40,
-                        fontSize: 13,
-                        onPressed: onView,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// NOTE: the inline `_ActiveRequestBanner` ("You're helping X") that
+// used to live here has been replaced by a dedicated `YourActiveTripCard`
+// on the home tab. Removing it kept the map screen focused purely on
+// browsing nearby requests.
 
 // ---------------------------------------------------------------------------
 // Small circular icon button used for map overlay actions

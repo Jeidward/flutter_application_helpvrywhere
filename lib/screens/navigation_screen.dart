@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/nearby_request.dart';
+import 'package:flutter_application_helpvrywhere/models/trip.dart';
+import 'package:flutter_application_helpvrywhere/screens/arrived_helper_screen.dart';
 import 'package:flutter_application_helpvrywhere/services/mapbox_directions_service.dart';
+import 'package:flutter_application_helpvrywhere/services/trip_service.dart';
 import 'package:flutter_application_helpvrywhere/widgets/map_markers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -28,12 +31,26 @@ class NavigationScreen extends StatefulWidget {
     required this.route,
     required this.startLat,
     required this.startLng,
+    this.trip,
   });
 
   final NearbyRequest request;
   final RouteResult route;
   final double startLat;
   final double startLng;
+
+  /// When supplied, this screen acts as the "live trip" stage of the
+  /// "Help on the way" flow. It will:
+  ///   • Flip the trip status to [TripStatus.enRoute] on open
+  ///   • Push helper GPS to the trip doc every ~10 s (so the
+  ///     requester's tracking screen shows movement)
+  ///   • On geofence hit (50 m), push to [ArrivedHelperScreen]
+  ///     (which then flips status to [TripStatus.atDoor]).
+  ///
+  /// Pass `null` for the legacy "directions only" mode used by the
+  /// "Directions" pill on the request detail screen — no trip
+  /// updates, just turn-by-turn.
+  final Trip? trip;
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -57,11 +74,18 @@ class _NavigationScreenState extends State<NavigationScreen> {
   mb.PolylineAnnotationManager? _lineMgr;
   mb.PointAnnotation? _userMarker;
 
+  // Trip syncing (helper-side). When [widget.trip] is non-null we push
+  // GPS to Firestore every 10 s so the requester's tracking screen
+  // sees movement, and we route to ArrivedHelperScreen on geofence.
+  DateTime _lastTripPush = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _tripPushInterval = Duration(seconds: 10);
+
   @override
   void initState() {
     super.initState();
     _initTts();
     _startLocationStream();
+    _markTripEnRouteIfNeeded();
     // Announce the very first step as soon as the screen opens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.route.steps.isNotEmpty) {
@@ -120,7 +144,49 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _updateUserPin(pos);
     _followCamera(pos);
     _advanceStepsIfNeeded(pos);
+    _pushTripLocationIfDue(pos);
     _checkArrival(pos);
+  }
+
+  /// Flips the trip to `enRoute` on screen open. Best-effort — if the
+  /// write fails, the requester just sees the trip stay in
+  /// `confirmed`; the next location push will retry.
+  Future<void> _markTripEnRouteIfNeeded() async {
+    final trip = widget.trip;
+    if (trip == null) return;
+    if (trip.status == TripStatus.enRoute ||
+        trip.status == TripStatus.atDoor ||
+        trip.status == TripStatus.completed) {
+      return;
+    }
+    try {
+      await TripService().updateStatus(trip.id, TripStatus.enRoute);
+    } catch (_) {/* surfaced on the next push */}
+  }
+
+  /// Pushes the helper's GPS to the trip doc on a throttled timer so
+  /// the requester's tracking screen renders smooth movement without
+  /// hammering Firestore. ~10 s cadence; one small doc update per push.
+  Future<void> _pushTripLocationIfDue(Position pos) async {
+    final trip = widget.trip;
+    if (trip == null) return;
+    final now = DateTime.now();
+    if (now.difference(_lastTripPush) < _tripPushInterval) return;
+    _lastTripPush = now;
+
+    // Re-estimate ETA from the remaining route distance. Walking pace
+    // assumption matches NearbyRequestService.
+    final remainingM = _distanceToDestination();
+    final etaMin = (remainingM / 1000 * 12).round().clamp(1, 999);
+
+    try {
+      await TripService().updateHelperLocation(
+        trip.id,
+        lat: pos.latitude,
+        lng: pos.longitude,
+        etaMinutes: etaMin,
+      );
+    } catch (_) {/* will retry next interval */}
   }
 
   Future<void> _updateUserPin(Position pos) async {
@@ -197,10 +263,32 @@ class _NavigationScreenState extends State<NavigationScreen> {
       widget.request.latitude,
       widget.request.longitude,
     );
-    if (distMeters < 30) {
+    // 50 m geofence matches the design handoff. The legacy "directions
+    // only" mode (no trip) keeps the older 30 m threshold so we don't
+    // change its UX. Trip mode triggers the arrival screen.
+    final trip = widget.trip;
+    final threshold = trip == null ? 30 : 50;
+    if (distMeters < threshold) {
       setState(() => _arrived = true);
       _speak('You have arrived at the meeting point.');
       _posSub?.cancel();
+
+      if (trip != null) {
+        // Route to the calm "You've arrived" screen, which flips the
+        // trip to atDoor and signals the requester to verify the code.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => ArrivedHelperScreen(
+                trip: trip,
+                requesterName: widget.request.requesterName,
+                doorLabel: widget.request.requesterLocation,
+              ),
+            ),
+          );
+        });
+      }
     }
   }
 

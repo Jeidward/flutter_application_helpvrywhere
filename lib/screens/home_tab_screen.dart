@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:flutter_application_helpvrywhere/services/speech_bridge.dart';
+import 'package:flutter_application_helpvrywhere/widgets/your_active_trip_card.dart';
 
 class HomeTab extends StatelessWidget {
   final Function(int) onNavigate;
@@ -10,7 +11,9 @@ class HomeTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Scrollable so the live status cards (below) can appear above the
+    // navigation cards without ever overflowing on smaller phones.
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -20,9 +23,19 @@ class HomeTab extends StatelessWidget {
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+
+          // ===================== ACTIVE TRIP (HELPER) =====================
+          // Renders nothing (zero-size) unless you're mid-trip helping
+          // someone — then it surfaces a resume button right here so the
+          // trip is always reachable from home (replaces the old map
+          // banner). Your own *requests* live on the "My Requests" tab.
+          const YourActiveTripCard(),
 
           // ===================== HELP OTHERS =====================
+          // Sends the user to tab 1 (the nearby-requests map). Was the
+          // "Help people around you" placeholder before; that screen
+          // got removed and the map icon now opens the map directly.
           _HomeCard(
             color: Colors.blue,
             icon: Icons.location_on,

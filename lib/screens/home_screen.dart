@@ -1,13 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
+import 'package:flutter_application_helpvrywhere/screens/conversations_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/my_request_tab.dart';
 import 'package:flutter_application_helpvrywhere/screens/onboarding_tour_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
-import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
-import 'package:flutter_application_helpvrywhere/screens/help_others.dart';
-import 'package:flutter_application_helpvrywhere/screens/my_request_tab.dart';
-import 'package:flutter_application_helpvrywhere/screens/conversations_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
+import 'package:flutter_application_helpvrywhere/services/auth_service.dart';
 import 'home_tab_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,7 +24,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _pages = [
       HomeTab(onNavigate: _onTabSelected),
-      const HelpOthersTab(),
+      // Tab 1 (the map icon) goes straight to the nearby-requests map
+      // — the old "Help people around you" placeholder is gone.
+      const RequestMapScreen(),
       ConversationsScreen(),
       const MyRequestTab(),
     ];

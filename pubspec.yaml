@@ -34,16 +34,16 @@ dependencies:
   cupertino_icons: ^1.0.8
   firebase_core: ^4.6.0
   flutter_native_splash: ^2.4.7
-  http: ^1.2.2           # ← NUEVO: para llamar la API de Gemini
-  image_picker: ^1.1.2   # ← NUEVO: para elegir imágenes de la galería
+  http: ^1.2.2 # ← NUEVO: para llamar la API de Gemini
+  image_picker: ^1.1.2 # ← NUEVO: para elegir imágenes de la galería
   firebase_auth: ^6.3.0
   speech_to_text: ^7.3.0
   permission_handler: ^11.3.1
   flutter_tts: ^4.2.3
-  mapbox_maps_flutter: ^2.5.0    # nearby-requests map UI
-  flutter_dotenv: ^5.1.0          # loads tokens from .env at startup
-  google_fonts: ^6.2.1            # Plus Jakarta Sans for the nearby-request UI
-  shared_preferences: ^2.3.2      # local storage for pre-signup onboarding choices
+  mapbox_maps_flutter: ^2.5.0 # nearby-requests map UI
+  flutter_dotenv: ^5.1.0 # loads tokens from .env at startup
+  google_fonts: ^6.2.1 # Plus Jakarta Sans for the nearby-request UI
+  shared_preferences: ^2.3.2 # local storage for pre-signup onboarding choices
 
 dev_dependencies:
   flutter_test:
