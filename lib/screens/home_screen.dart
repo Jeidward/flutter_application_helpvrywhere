@@ -52,6 +52,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       // ================= HEADER =================
       appBar: AppBar(
+        // [donghwan] Temporary fix: under senior mode (1.3x text scaling)
+        // the default toolbar height was clipping the greeting + name
+        // column. Bumped to 80 and forced single-line text with ellipsis.
+        // Please double-check / replace when the senior home variant lands.
+        toolbarHeight: 80,
         title: FutureBuilder<UserModel?>(
           future: AuthService().getUserDocument(
             FirebaseAuth.instance.currentUser?.uid ?? '',
@@ -65,6 +70,8 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   _getCurrentTimeDate(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w500,
@@ -75,6 +82,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 Text(
                   name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
