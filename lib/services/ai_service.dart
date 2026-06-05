@@ -3,139 +3,304 @@ import 'dart:typed_data';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
-// ── Data classes ────────────────────────────────────────────────────────────
+// ── Data classes ─────────────────────────────────────────────────────────────
 
-/// One guidance step returned by Gemini for the overlay loop.
-///
-/// Voice-first design: the instruction is the *only* signal the overlay
-/// uses to guide the user. There is no spatial highlight — vision models
-/// are unreliable at coordinates and the overlay would block the very tap
-/// we're asking the user to make. Instead, the instruction is shown in a
-/// small movable pill on screen and read aloud via TTS.
+/// One guidance step returned by the AI for the overlay loop.
 class AiStep {
   final String instruction; // What the user must do — read aloud by TTS
   final bool isComplete; // true = goal reached, close the overlay
   final int stepNumber;
+  /// Index into the UI tree the AI was shown. SpeechBridge uses this to
+  /// look up the element's exact pixel bounds from AccessibilityService.
+  /// Null/negative when the model didn't pick a tree element (no tree
+  /// available, no match, system gesture, or goal complete).
+  final int? targetId;
+  /// Normalized region (0–1) fallback — used when no UI tree was available
+  /// (accessibility service off) so we still get *some* thumbnail.
+  /// Null when complete or when the model didn't return one.
+  final TargetRegion? targetRegion;
 
   const AiStep({
     required this.instruction,
     required this.isComplete,
     this.stepNumber = 1,
+    this.targetId,
+    this.targetRegion,
   });
 
   factory AiStep.fromJson(Map<String, dynamic> json) {
+    final rawId = json['target_id'];
+    int? id;
+    if (rawId is int && rawId >= 0) {
+      id = rawId;
+    } else if (rawId is num && rawId >= 0) {
+      id = rawId.toInt();
+    }
+
+    TargetRegion? region;
+    final regionRaw = json['target_region'];
+    if (regionRaw is Map) {
+      try {
+        region = TargetRegion.fromJson(Map<String, dynamic>.from(regionRaw));
+      } catch (_) {
+        region = null;
+      }
+    }
     return AiStep(
       instruction:
           (json['instruction'] as String?)?.trim() ??
           'Follow the instructions on screen.',
       isComplete: json['is_complete'] as bool? ?? false,
       stepNumber: json['step_number'] as int? ?? 1,
+      targetId: id,
+      targetRegion: region,
     );
   }
 
-  /// Fallback when JSON parsing fails — plain text only.
   factory AiStep.error(String message) {
     return AiStep(instruction: message, isComplete: false);
   }
 }
 
-// ── Service ─────────────────────────────────────────────────────────────────
+/// One element from the OS-provided UI tree. We hand a filtered list of
+/// these to the model so it can pick a target by id instead of guessing
+/// pixel coordinates.
+class UiElement {
+  final int id;
+  final String? text;
+  final String? description;
+  final String? className;
+  final bool clickable;
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+
+  const UiElement({
+    required this.id,
+    required this.text,
+    required this.description,
+    required this.className,
+    required this.clickable,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  factory UiElement.fromMap(Map<dynamic, dynamic> m) => UiElement(
+        id: (m['id'] as num).toInt(),
+        text: (m['text'] as String?)?.trim().isNotEmpty == true
+            ? (m['text'] as String).trim()
+            : null,
+        description: (m['description'] as String?)?.trim().isNotEmpty == true
+            ? (m['description'] as String).trim()
+            : null,
+        className: m['class'] as String?,
+        clickable: m['clickable'] == true,
+        x: (m['x'] as num).toInt(),
+        y: (m['y'] as num).toInt(),
+        width: (m['width'] as num).toInt(),
+        height: (m['height'] as num).toInt(),
+      );
+
+  /// Compact single-line representation for the prompt.
+  /// Format:  [42] Button "YouTube" desc="Open YouTube" at (650,1800) 120x120
+  String toPromptLine() {
+    final parts = <String>['[$id]'];
+    if (className != null) parts.add(className!);
+    if (text != null) parts.add('"$text"');
+    if (description != null && description != text) {
+      parts.add('desc="$description"');
+    }
+    if (clickable) parts.add('(clickable)');
+    parts.add('at ($x,$y) ${width}x$height');
+    return parts.join(' ');
+  }
+}
+
+/// Normalized region (0.0–1.0) returned by the model. (0,0) is the top-left
+/// of the screenshot, (1,1) is the bottom-right. Width and height are also
+/// fractions of the full image size.
+class TargetRegion {
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  const TargetRegion({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  factory TargetRegion.fromJson(Map<String, dynamic> json) {
+    double parse(dynamic v, double fallback) =>
+        v is num ? v.toDouble() : fallback;
+    final x = parse(json['x'], 0.0).clamp(0.0, 1.0).toDouble();
+    final y = parse(json['y'], 0.0).clamp(0.0, 1.0).toDouble();
+    final w = parse(json['width'], 1.0).clamp(0.01, 1.0).toDouble();
+    final h = parse(json['height'], 1.0).clamp(0.01, 1.0).toDouble();
+    return TargetRegion(x: x, y: y, width: w, height: h);
+  }
+
+  /// True when the region is either too small or essentially the whole
+  /// screen — both useless for a thumbnail, so we skip the crop.
+  bool get isUseless =>
+      width >= 0.95 || height >= 0.95 || width <= 0.02 || height <= 0.02;
+
+  @override
+  String toString() =>
+      '(x: ${x.toStringAsFixed(2)}, y: ${y.toStringAsFixed(2)}, '
+      'w: ${width.toStringAsFixed(2)}, h: ${height.toStringAsFixed(2)})';
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 class AiService {
-  // The Gemini key is loaded from `.env` (gitignored) at app startup
-  // via flutter_dotenv. Falls back to '' if missing — the code below
-  // surfaces a clear error in that case instead of crashing.
-  // To rotate: edit .env, hot-restart.
-  static String get _apiKey => dotenv.env['GEMINI_KEY'] ?? '';
+  // Groq key loaded from `.env` (gitignored). Add: GROQ_KEY=gsk_...
+  static String get _apiKey => dotenv.env['GROQ_KEY'] ?? '';
 
-  // 2.5-flash is the one that worked initially — sticking with it.
-  // If you see 503 (overloaded), the retry logic in this file will handle it.
-  static const String _model = 'gemini-2.5-flash';
+  // Llama 4 Scout on Groq — vision support + extremely fast LPU inference.
+  static const String _model = 'meta-llama/llama-4-scout-17b-16e-instruct';
+  static const String _apiUrl =
+      'https://api.groq.com/openai/v1/chat/completions';
 
-  static String get _apiUrl =>
-      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$_apiKey';
-
-  // ── NEW: Overlay guidance loop ────────────────────────────────────────────
+  // ── Overlay guidance loop ─────────────────────────────────────────────────
 
   /// Takes a screenshot + the user's spoken goal and returns one guidance
-  /// step with a plain-language instruction AND the bounding box of the
-  /// element the user must tap (as screen-size fractions 0.0–1.0).
-  ///
-  /// Call this again with a fresh screenshot after every user action to
-  /// advance through the steps automatically.
+  /// step. Call again with a fresh screenshot after every user action.
   Future<AiStep> analyzeScreenForGuidance({
     required Uint8List imageBytes,
     required String userGoal,
     int currentStep = 1,
+    List<String> stepHistory = const [],
+    List<UiElement> uiTree = const [],
   }) async {
     final base64Image = base64Encode(imageBytes);
 
-    final prompt =
-        '''
+    // Format the step history for the prompt.
+    final historyText = stepHistory.isEmpty
+        ? 'None — this is the first step.'
+        : stepHistory
+            .asMap()
+            .entries
+            .map((e) => '  Step ${e.key + 1}: "${e.value}"')
+            .join('\n');
+
+    final lastInstruction =
+        stepHistory.isNotEmpty ? stepHistory.last : 'none yet';
+
+    // UI tree section — present only when AccessibilityService is enabled.
+    // When present, the model should pick a target_id from this list (the
+    // OS-provided bounds are perfect). When absent, the model falls back
+    // to target_region (a normalized bbox it guesses from the screenshot).
+    final hasTree = uiTree.isNotEmpty;
+    final treeText = hasTree
+        ? uiTree.map((e) => '  ${e.toPromptLine()}').join('\n')
+        : '  (UI tree not available — accessibility service is off)';
+
+    final prompt = '''
 You are an AI assistant helping elderly users (65+) use their smartphone.
 
 The user's goal is: "$userGoal"
-This is step $currentStep of the guidance session.
+This is step $currentStep.
 
-Analyze the screenshot CAREFULLY. Respond with ONLY a raw JSON object —
-no markdown, no code blocks, no preamble like "Here is the JSON".
+── What you already told the user ───────────────────────────────────────────
+$historyText
 
-Required format:
+── UI elements currently on screen (from the OS, with EXACT pixel coords) ──
+$treeText
+
+══════════════════════════════════════════════════════════════════════════════
+GOAL COMPLETION — Take the user's goal LITERALLY. Do NOT add extra steps.
+══════════════════════════════════════════════════════════════════════════════
+
+"open X"
+  → DONE the moment X is visible on screen.
+  → Do NOT suggest searching, scrolling, tapping videos, or anything else.
+    The user only asked to OPEN it. Stop there.
+  → Examples:
+    • "open YouTube"  → YouTube interface visible (red logo + video feed) → DONE.
+    • "open Gmail"    → Gmail inbox visible → DONE.
+    • "open Settings" → Settings menu visible → DONE.
+    • "open WhatsApp" → WhatsApp chat list visible → DONE.
+
+"send a message to X"  → DONE when the message appears as "Sent" in the chat thread.
+"call X"               → DONE when the dialing / call-active screen shows X.
+"take a photo"         → DONE when the photo preview is shown.
+"search for Y"         → DONE when Y appears in search results.
+
+══════════════════════════════════════════════════════════════════════════════
+PROBLEM DETECTION
+══════════════════════════════════════════════════════════════════════════════
+
+LOOP — The last instruction was: "$lastInstruction"
+  If the screen looks the same and you would repeat that instruction → DO NOT.
+  Give a completely different action (Back button, home screen, scroll, etc.).
+
+WRONG SCREEN — If the user is in an app/screen that cannot reach "$userGoal":
+  Tell them: "You went to the wrong app. Press the back button at the very bottom of the screen to return."
+
+STUCK — If the same instruction appears twice in history → try a different approach.
+
+══════════════════════════════════════════════════════════════════════════════
+RESPONSE FORMAT — ONLY this JSON, no markdown, no extra text
+══════════════════════════════════════════════════════════════════════════════
+
 {
+  "what_i_see": "1 honest sentence describing the screen. Name the app if you can identify it.",
+  "is_complete": <true or false>,
   "instruction": "...",
-  "is_complete": false,
+  "target_id": -1,
+  "target_region": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
   "step_number": $currentStep
 }
 
-── Field rules ────────────────────────────────────────────────────────
+IMPORTANT: Fill "what_i_see" FIRST. Identifying the screen helps you decide is_complete correctly.
+Apply the GOAL COMPLETION rules above strictly — if "what_i_see" describes the goal already achieved, is_complete MUST be true.
 
-"instruction"
-  - ONE action the user must do next.
-  - Describe the target by COLOR, SHAPE, and POSITION using everyday
-    language. The user will use this description to find the element
-    themselves — be vivid and specific.
-    GOOD: "Tap the red square with a white play button, near the bottom
-           right of the screen — it is labeled YouTube."
-    GOOD: "Tap the green circle with a white phone, in the bottom row of
-           icons. It says WhatsApp underneath."
-    BAD:  "Tap the WhatsApp icon."        ← too brand-specific
-    BAD:  "Tap the third icon."           ← position only, not visual
-  - You MAY include the brand name ONLY as a hint at the end, not as the
-    primary identifier (e.g. "...labeled YouTube" / "...called WhatsApp").
-  - Mention WHERE on the screen ("near the bottom row", "at the top",
-    "in the middle on the left") so the user knows where to look.
-  - Maximum 30 words. Simple language for elderly users. No jargon.
+Rules for "instruction":
+- is_complete TRUE  → "Great! You reached your goal. You can close the assistant."
+- is_complete FALSE → ONE action only. Describe by COLOR, SHAPE, POSITION. Max 30 words.
+    GOOD: "Tap the red square with a white play button near the bottom right — labeled YouTube."
+    BAD:  "Tap the YouTube icon."
 
-"is_complete": true ONLY if the goal is already achieved in this
-  screenshot. If true, set instruction to "You reached your goal! You
-  can close the assistant."
+Rules for "target_id" (preferred when the UI tree above has elements):
+- Pick the ID of the element the user should tap from the list above.
+- Match by text, description, class, and what you see in the screenshot.
+- If multiple elements could match, prefer the most CLICKABLE one (clickable=true).
+- If NOTHING in the list matches → return -1.
+- If is_complete is TRUE → return -1.
+- If the action is a system gesture (back, home, swipe) → return -1.
+
+Rules for "target_region" (fallback — only used when target_id is -1):
+- (0,0) is the TOP-LEFT of the screenshot. (1,1) is the BOTTOM-RIGHT.
+- x, y, width, height frame the target element with some context (≈1.5x).
+- When target_id is a valid ID, set this to {"x": 0, "y": 0, "width": 1, "height": 1}.
+- When is_complete or system gesture, also return the full-screen default.
 ''';
 
     final body = jsonEncode({
-      'contents': [
+      'model': _model,
+      'messages': [
         {
-          'parts': [
+          'role': 'user',
+          'content': [
             {
-              'inline_data': {'mime_type': 'image/jpeg', 'data': base64Image},
+              'type': 'image_url',
+              'image_url': {'url': 'data:image/png;base64,$base64Image'},
             },
-            {'text': prompt},
+            {'type': 'text', 'text': prompt},
           ],
         },
       ],
-      'generationConfig': {
-        // Bumped from 300 — JSON responses with `instruction` text + the
-        // highlight object were occasionally truncated mid-string at 300,
-        // which then failed to parse and surfaced as a generic
-        // "AI gave a confusing answer" error.
-        'maxOutputTokens': 600,
-        'temperature': 0.1,
-        'responseMimeType': 'application/json',
-      },
+      'max_tokens': 300, // covers what_i_see + target_id + target_region
+      'temperature': 0.0, // deterministic — no creativity for UI guidance
+      'response_format': {'type': 'json_object'}, // guaranteed JSON output
     });
 
-    // Retry up to 3 times on transient failures (503/429/500/timeout) with
-    // exponential backoff: 1s → 2s → 4s. Gemini's free tier returns 503 when
-    // the model is hot — a couple of retries usually clears it.
     const transientCodes = {408, 429, 500, 502, 503, 504};
     http.Response? response;
 
@@ -144,7 +309,10 @@ Required format:
         response = await http
             .post(
               Uri.parse(_apiUrl),
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $_apiKey',
+              },
               body: body,
             )
             .timeout(
@@ -152,11 +320,10 @@ Required format:
               onTimeout: () => http.Response('{"error":"timeout"}', 408),
             );
 
-        // Success or non-retryable error → bail out
         if (!transientCodes.contains(response.statusCode)) break;
 
         print(
-          '=== GEMINI transient error ${response.statusCode} '
+          '=== GROQ transient error ${response.statusCode} '
           '(attempt ${attempt + 1}/3) — retrying ===',
         );
       } catch (e) {
@@ -166,11 +333,9 @@ Required format:
             'No internet connection. Please check your WiFi and try again.',
           );
         }
-        // Other exceptions: treat as transient and retry
       }
 
       if (attempt < 2) {
-        // 1s, then 2s — total worst case ≈ 4s wait
         await Future.delayed(Duration(seconds: 1 << attempt));
       }
     }
@@ -180,14 +345,13 @@ Required format:
     }
 
     if (response.statusCode == 200) {
-      return _parseGuidanceResponse(response.body);
+      return _parseGroqGuidanceResponse(response.body);
     }
 
-    print('=== GEMINI ERROR after retries [analyzeScreenForGuidance] ===');
+    print('=== GROQ ERROR after retries [analyzeScreenForGuidance] ===');
     print('Status: ${response.statusCode}');
     print('Body: ${response.body}');
 
-    // Surface a more useful hint when we know the cause.
     if (response.statusCode == 400) {
       return AiStep.error(
         'AI rejected the request (400). Check the terminal for details.',
@@ -199,112 +363,64 @@ Required format:
     return AiStep.error('Could not analyze the screen. Please try again.');
   }
 
-  /// Defensive parser for Gemini's JSON-mode response.
-  ///
-  /// The previous version assumed the happy-path shape
-  /// `candidates[0].content.parts[0].text` always exists. In reality Gemini
-  /// can omit the parts array entirely when:
-  ///   - `finishReason == "SAFETY"`        (safety filter blocked the answer)
-  ///   - `finishReason == "MAX_TOKENS"`    (output was cut off mid-stream)
-  ///   - `finishReason == "RECITATION"`    (model thought it was reciting)
-  ///   - `promptFeedback.blockReason`      (prompt itself was blocked)
-  /// In those cases the old code threw a `Null check operator used on a null
-  /// value` and surfaced a generic "AI gave a confusing answer".
-  AiStep _parseGuidanceResponse(String responseBody) {
-    final dynamic data;
+  /// Parse Groq's OpenAI-compatible JSON response.
+  AiStep _parseGroqGuidanceResponse(String responseBody) {
     try {
-      data = jsonDecode(responseBody);
-    } catch (e) {
-      print('=== GEMINI: response was not JSON: $e ===');
-      print(
-        '=== Body (first 500 chars): '
-        '${responseBody.substring(0, responseBody.length.clamp(0, 500))}',
-      );
-      return AiStep.error(
-        'AI returned an unreadable response. Please try again.',
-      );
-    }
+      final data = jsonDecode(responseBody) as Map<String, dynamic>;
 
-    // Prompt-level block? No candidates at all.
-    final blockReason = data['promptFeedback']?['blockReason'];
-    if (blockReason != null) {
-      print('=== GEMINI: prompt blocked, reason=$blockReason ===');
-      return AiStep.error(
-        'The AI declined to analyze this screen. Try a different request.',
-      );
-    }
-
-    final candidates = data['candidates'];
-    if (candidates is! List || candidates.isEmpty) {
-      print('=== GEMINI: no candidates in response ===');
-      print('Body: $responseBody');
-      return AiStep.error('Could not analyze the screen. Please try again.');
-    }
-
-    final cand = candidates[0] as Map<String, dynamic>;
-    final finishReason = cand['finishReason'] as String?;
-    final parts = cand['content']?['parts'];
-
-    if (parts is! List || parts.isEmpty) {
-      print('=== GEMINI: empty parts (finishReason=$finishReason) ===');
-      switch (finishReason) {
-        case 'SAFETY':
-          return AiStep.error(
-            'The AI refused this screen for safety reasons. Try a different request.',
-          );
-        case 'MAX_TOKENS':
-          return AiStep.error(
-            'The AI ran out of room to answer. Try again — it usually works.',
-          );
-        case 'RECITATION':
-          return AiStep.error(
-            'The AI declined to repeat copyrighted content. Try rewording.',
-          );
-        default:
-          return AiStep.error(
-            'Could not analyze the screen. Please try again.',
-          );
+      final choices = data['choices'];
+      if (choices is! List || choices.isEmpty) {
+        print('=== GROQ: no choices in response. Body: $responseBody ===');
+        return AiStep.error('Could not analyze the screen. Please try again.');
       }
-    }
 
-    final rawText = (parts[0] as Map<String, dynamic>)['text'] as String? ?? '';
-    if (rawText.trim().isEmpty) {
-      print('=== GEMINI: empty text part (finishReason=$finishReason) ===');
-      return AiStep.error('AI returned no answer. Please try again.');
-    }
+      final finishReason = choices[0]['finish_reason'] as String?;
+      final content = choices[0]['message']?['content'] as String?;
 
-    var cleaned = rawText
-        .trim()
-        .replaceAll('```json', '')
-        .replaceAll('```', '')
-        .trim();
+      if (content == null || content.trim().isEmpty) {
+        print('=== GROQ: empty content (finish_reason=$finishReason) ===');
+        return AiStep.error('AI returned no answer. Please try again.');
+      }
 
-    // Slice everything between the first `{` and the last `}` — handles the
-    // occasional case where Gemini prepends preamble text before the JSON.
-    final firstBrace = cleaned.indexOf('{');
-    final lastBrace = cleaned.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-    }
+      // response_format: json_object guarantees valid JSON, but clean just in case.
+      var cleaned = content
+          .trim()
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
 
-    try {
+      final firstBrace = cleaned.indexOf('{');
+      final lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+      }
+
       final jsonMap = jsonDecode(cleaned) as Map<String, dynamic>;
+
+      // Log the model's screen identification — invaluable for debugging
+      // why is_complete didn't trigger when it should have.
+      final whatISee = jsonMap['what_i_see'];
+      if (whatISee != null) {
+        print('=== GROQ sees: "$whatISee" ===');
+      }
+      final idLog = jsonMap['target_id'];
+      if (idLog != null) {
+        print('=== GROQ target_id: $idLog ===');
+      }
+      final regionLog = jsonMap['target_region'];
+      if (regionLog != null) {
+        print('=== GROQ target_region: $regionLog ===');
+      }
+
       return AiStep.fromJson(jsonMap);
     } catch (e) {
-      // If we hit MAX_TOKENS the JSON will be truncated mid-string. Tell the
-      // user something useful instead of a generic confusion message.
-      if (finishReason == 'MAX_TOKENS') {
-        return AiStep.error('The AI answer was cut off. Please try again.');
-      }
-      print(
-        '=== JSON parse failed (finishReason=$finishReason). '
-        'Raw text: $rawText ===',
-      );
+      print('=== GROQ parse failed: $e ===');
+      print('Body: $responseBody');
       return AiStep.error('AI gave a confusing answer. Please try again.');
     }
   }
 
-  // ── EXISTING: kept for AIGuideScreen (manual image-picker flow) ───────────
+  // ── Manual image-picker flow (AIGuideScreen) ──────────────────────────────
 
   Future<List<String>> analyzeScreenAndGuide({
     required Uint8List imageBytes,
@@ -316,41 +432,41 @@ Required format:
       final response = await http
           .post(
             Uri.parse(_apiUrl),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_apiKey',
+            },
             body: jsonEncode({
-              'contents': [
+              'model': _model,
+              'messages': [
                 {
-                  'parts': [
+                  'role': 'user',
+                  'content': [
                     {
-                      'inline_data': {
-                        'mime_type': 'image/jpeg',
-                        'data': base64Image,
+                      'type': 'image_url',
+                      'image_url': {
+                        'url': 'data:image/png;base64,$base64Image',
                       },
                     },
                     {
+                      'type': 'text',
                       'text':
-                          '''You are a technology assistant helping elderly users (65+) use their smartphones.
-
-The user wants to: "$userGoal"
-
-This image is a screenshot from the user's phone.
-
-Your task:
-1. Analyze what is visible on the screen (apps, icons, buttons, menus).
-2. Provide clear step-by-step instructions to help the user achieve their goal.
-3. Use very simple language — describe elements by their COLOR and SHAPE, not their technical name.
-   BAD example: "Tap the WhatsApp icon"
-   GOOD example: "Find the green square with a white phone inside"
-
-Reply ONLY with a numbered list. Maximum 5 steps. Format:
-1. [instruction]
-2. [instruction]
-3. [instruction]''',
+                          'You are a technology assistant helping elderly users (65+) '
+                          'use their smartphones.\n\n'
+                          'The user wants to: "$userGoal"\n\n'
+                          'Analyze what is visible on the screen and provide clear '
+                          'step-by-step instructions. Use very simple language — '
+                          'describe elements by their COLOR and SHAPE.\n'
+                          'BAD: "Tap the WhatsApp icon"\n'
+                          'GOOD: "Find the green square with a white phone inside"\n\n'
+                          'Reply ONLY with a numbered list, max 5 steps:\n'
+                          '1. [instruction]\n2. [instruction]\n3. [instruction]',
                     },
                   ],
                 },
               ],
-              'generationConfig': {'maxOutputTokens': 500, 'temperature': 0.3},
+              'max_tokens': 500,
+              'temperature': 0.3,
             }),
           )
           .timeout(
@@ -359,86 +475,77 @@ Reply ONLY with a numbered list. Maximum 5 steps. Format:
           );
 
       if (response.statusCode == 200) {
-        final text = _safeExtractText(response.body);
-        if (text == null) {
-          return ['Could not analyze the image. Please try again.'];
-        }
+        final text = _extractText(response.body);
+        if (text == null) return ['Could not analyze the image. Please try again.'];
         return _parseSteps(text);
-      } else {
-        print('=== GEMINI ERROR [analyzeScreenAndGuide] ===');
-        print('Status: ${response.statusCode}');
-        print('Body: ${response.body}');
-        return [
-          'Error ${response.statusCode}. Check the terminal for details.',
-        ];
       }
+
+      print('=== GROQ ERROR [analyzeScreenAndGuide] ===');
+      print('Status: ${response.statusCode} | Body: ${response.body}');
+      return ['Error ${response.statusCode}. Check the terminal for details.'];
     } catch (e) {
       print('=== EXCEPTION: $e ===');
       if (e.toString().contains('SocketException') ||
           e.toString().contains('timeout')) {
-        return [
-          'No internet connection. Please check your WiFi and try again.',
-        ];
+        return ['No internet connection. Please check your WiFi and try again.'];
       }
       return ['Unexpected error: ${e.toString()}'];
     }
   }
 
-  /// Best-effort extraction of the assistant text from Gemini's response.
-  /// Returns null when there's no usable text (safety block, empty parts, …).
-  String? _safeExtractText(String responseBody) {
-    try {
-      final data = jsonDecode(responseBody);
-      if (data['promptFeedback']?['blockReason'] != null) return null;
-      final candidates = data['candidates'];
-      if (candidates is! List || candidates.isEmpty) return null;
-      final parts = candidates[0]['content']?['parts'];
-      if (parts is! List || parts.isEmpty) return null;
-      final text = parts[0]['text'] as String?;
-      if (text == null || text.trim().isEmpty) return null;
-      return text;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // ── EXISTING: text-only quick help ───────────────────────────────────────
+  // ── Text-only quick help ──────────────────────────────────────────────────
 
   Future<String> quickHelp(String question) async {
     try {
       final response = await http
           .post(
             Uri.parse(_apiUrl),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_apiKey',
+            },
             body: jsonEncode({
-              'contents': [
+              'model': _model,
+              'messages': [
                 {
-                  'parts': [
-                    {
-                      'text':
-                          'You are a technology assistant for elderly users. '
-                          'Answer this question in very simple language, max 3 short sentences: '
-                          '"$question"',
-                    },
-                  ],
+                  'role': 'user',
+                  'content':
+                      'You are a technology assistant for elderly users. '
+                      'Answer in very simple language, max 3 short sentences: '
+                      '"$question"',
                 },
               ],
-              'generationConfig': {'maxOutputTokens': 200, 'temperature': 0.3},
+              'max_tokens': 200,
+              'temperature': 0.3,
             }),
           )
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final text = _safeExtractText(response.body);
-        return text ?? 'Could not get a response. Please try again.';
+        return _extractText(response.body) ??
+            'Could not get a response. Please try again.';
       }
       return 'Could not get a response. Please try again.';
-    } catch (e) {
+    } catch (_) {
       return 'No connection. Check your internet and try again.';
     }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// Extract the assistant's text from Groq's OpenAI-compatible response.
+  String? _extractText(String responseBody) {
+    try {
+      final data = jsonDecode(responseBody);
+      final choices = data['choices'];
+      if (choices is! List || choices.isEmpty) return null;
+      final content = choices[0]['message']?['content'] as String?;
+      if (content == null || content.trim().isEmpty) return null;
+      return content.trim();
+    } catch (_) {
+      return null;
+    }
+  }
 
   List<String> _parseSteps(String rawText) {
     final lines = rawText.trim().split('\n');

@@ -14,6 +14,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -27,6 +28,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val BACKGROUND_CHANNEL = "app/background"
         private const val SCREENSHOT_CHANNEL = "app/screenshot"
+        private const val ACCESSIBILITY_CHANNEL = "app/accessibility"
         private const val REQUEST_MEDIA_PROJECTION = 1001
     }
 
@@ -79,6 +81,45 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // ── Accessibility channel ─────────────────────────────────────────
+        //   getUiTree              → List<Map> of visible/interactable elements
+        //                            with pixel bounds, or null if service not running
+        //   isAccessibilityEnabled → Bool
+        //   openAccessibilitySettings → opens system settings page
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ACCESSIBILITY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getUiTree" -> {
+                        val svc = UiTreeAccessibilityService.instance
+                        result.success(svc?.getActiveWindowTree())
+                    }
+                    "isAccessibilityEnabled" -> {
+                        result.success(isAccessibilityServiceEnabled())
+                    }
+                    "openAccessibilitySettings" -> {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * Check if THIS app's accessibility service is currently enabled by
+     * the user. The system stores the list of enabled services as a
+     * colon-separated string in Settings.Secure.
+     */
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val target = "$packageName/${UiTreeAccessibilityService::class.java.name}"
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabled.split(':').any { it.equals(target, ignoreCase = true) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
