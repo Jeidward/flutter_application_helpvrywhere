@@ -3,6 +3,7 @@ import '../services/request_service.dart';
 import '../models/request_model.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../theme/app_theme.dart';
 
 class RequestCreationScreen extends StatefulWidget {
   const RequestCreationScreen({super.key});
@@ -187,149 +188,294 @@ class _RequestCreationScreenState extends State<RequestCreationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Request')),
+      appBar: AppBar(
+        title: const Text(
+          'Create Request',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // TITLE
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Title',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Required' : null,
-              ),
-
-              const SizedBox(height: 16),
-
-              // CATEGORY
-              TextFormField(
-                controller: _categoryController,
-                decoration: const InputDecoration(
-                  labelText: 'Category',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Required' : null,
-              ),
-
-              const SizedBox(height: 16),
-
-              // DESCRIPTION
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Required' : null,
-              ),
-
-              const SizedBox(height: 16),
-
-              // LOCATION
-              TextFormField(
-                controller: _locationController,
-                decoration: const InputDecoration(
-                  labelText: 'Location',
-                  border: OutlineInputBorder(),
+              const Text(
+                'Ask a neighbour for help',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.darkNavy,
+                  letterSpacing: -0.3,
                 ),
               ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _isLocating ? null : getLocation,
-                child: _isLocating
-                    ? const CircularProgressIndicator()
-                    : const Text('Get your current position'),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: (_latitude == null && _longitude == null)
-                    ? null
-                    : clearLocation,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Remove location'),
+
+              const SizedBox(height: 6),
+
+              const Text(
+                'Describe what you need and when you need it.',
+                style: TextStyle(color: AppColors.muted, fontSize: 14),
               ),
 
-              // VERIFICATION OF LATITUDE / LONGITUDE
-              if (_latitude != null && _longitude != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.check_circle, color: Colors.green),
-                      SizedBox(width: 8),
-                      Text(
-                        "Position detected",
-                        style: TextStyle(color: Colors.green),
+              const SizedBox(height: 20),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Title',
+                        prefixIcon: const Icon(Icons.title),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
                       ),
-                    ],
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Required' : null,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _categoryController,
+                      decoration: InputDecoration(
+                        labelText: 'Category',
+                        prefixIcon: const Icon(Icons.category_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                      ),
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Required' : null,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _descriptionController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Description',
+                        prefixIcon: const Icon(Icons.notes),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                      ),
+                      validator: (value) =>
+                          value == null || value.isEmpty ? 'Required' : null,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _locationController,
+                      decoration: InputDecoration(
+                        labelText: 'Location',
+                        prefixIcon: const Icon(Icons.location_on_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLocating ? null : getLocation,
+                        icon: _isLocating
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.my_location),
+                        label: const Text('Get current position'),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: (_latitude == null && _longitude == null)
+                            ? null
+                            : clearLocation,
+                        icon: const Icon(Icons.close),
+                        label: const Text('Remove location'),
+                      ),
+                    ),
+
+                    if (_latitude != null && _longitude != null)
+                      Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.lightGreen,
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                        child: Row(
+                          children: const [
+                            Icon(
+                              Icons.check_circle,
+                              color: AppColors.primaryGreen,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Position detected',
+                              style: TextStyle(
+                                color: AppColors.primaryGreen,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      readOnly: true,
+                      controller: TextEditingController(
+                        text: _selectedDateTime == null
+                            ? 'Right now'
+                            : '${_selectedDateTime!.day}/${_selectedDateTime!.month}/${_selectedDateTime!.year} '
+                                  '${_selectedDateTime!.hour.toString().padLeft(2, '0')}:'
+                                  '${_selectedDateTime!.minute.toString().padLeft(2, '0')}',
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Request date & time',
+                        suffixIcon: const Icon(Icons.calendar_today),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                      ),
+                      onTap: _pickDateTime,
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedDateTime = null;
+                        });
+                      },
+                      child: const Text('Right now'),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Phone',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.tile),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              if (_error != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(AppRadius.tile),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
 
               const SizedBox(height: 16),
 
-              // DATETIME
-              TextFormField(
-                readOnly: true,
-                controller: TextEditingController(
-                  text: _selectedDateTime == null
-                      ? 'Right now'
-                      : '${_selectedDateTime!.day}/${_selectedDateTime!.month}/${_selectedDateTime!.year} '
-                            '${_selectedDateTime!.hour.toString().padLeft(2, '0')}:'
-                            '${_selectedDateTime!.minute.toString().padLeft(2, '0')}',
+              SizedBox(
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : createRequest,
+                  child: _isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text(
+                          'Create Request',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Request date & time',
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.calendar_today),
-                ),
-                onTap: _pickDateTime,
-              ),
-
-              const SizedBox(height: 8),
-
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedDateTime = null;
-                  });
-                },
-                child: const Text('Right now'),
-              ),
-
-              const SizedBox(height: 16),
-
-              // PHONE
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              if (_error != null)
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-
-              const SizedBox(height: 12),
-
-              ElevatedButton(
-                onPressed: _isLoading ? null : createRequest,
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('Create Request'),
               ),
             ],
           ),
