@@ -57,4 +57,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/how-to/ask/
+    - assets/how-to/offer/
+    - assets/how-to/ai/
     - .env

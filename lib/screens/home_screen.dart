@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_helpvrywhere/models/user_model.dart';
 import 'package:flutter_application_helpvrywhere/screens/conversations_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/my_request_tab.dart';
-import 'package:flutter_application_helpvrywhere/screens/onboarding_tour_screen.dart';
+import 'package:flutter_application_helpvrywhere/screens/how_to_guide_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/profile_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_creation_screen.dart';
 import 'package:flutter_application_helpvrywhere/screens/request_map_screen.dart';
@@ -98,11 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
         actions: [
           IconButton(
-            // Replay onboarding tour (full screen, pops back to home)
+            // Open the in-app how-to guide (picture-by-picture walkthrough)
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const OnboardingTourScreen(isReplay: true),
+                builder: (_) => const HowToGuideScreen(),
               ),
             ),
             icon: const Icon(Icons.help_outline),
