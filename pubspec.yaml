@@ -49,6 +49,20 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+
+# Generates platform launcher icons from a single source.
+# Run after editing:  dart run flutter_launcher_icons
+# Android-only for now — iOS icons can be regenerated later if needed.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/help-vrywhere-logo.png"
+  # Adaptive icon (Android API 26+). OS masks the foreground into
+  # whatever shape the launcher uses; the surrounding whitespace acts as
+  # the safe zone, so the mark scales nicely inside the mask.
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/help-vrywhere-logo.png"
 
 flutter:
   # The following line ensures that the Material Icons font is
@@ -57,4 +71,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/how-to/ask/
+    - assets/how-to/offer/
+    - assets/how-to/ai/
     - .env

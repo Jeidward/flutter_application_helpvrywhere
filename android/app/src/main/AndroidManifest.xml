@@ -24,7 +24,7 @@
             </intent>
         </queries>
     <application
-        android:label="flutter_application_helpvrywhere"
+        android:label="Help-vrywhere"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -4,7 +4,7 @@ class UserModel {
   final String uid;                 // Firebase Auth unique user ID
   final String email;               // Used for login and contact
   final String username;            // Unique name chosen by user — shown on HomeScreen greeting and profile
-  final String? photoUrl;           // Profile picture — auto-filled by Google sign-in, null for email users
+  final String? photoUrl;           // Profile picture URL — optional, set via profile edit
   final DateTime? phoneVerifiedUntil; // null = never verified, non-null = verification expiry date (180 days from verification)
   final DateTime createdAt;         // Timestamp when the user account was created
   final bool seniorMode;            // true = larger text + simplified layouts on key screens
