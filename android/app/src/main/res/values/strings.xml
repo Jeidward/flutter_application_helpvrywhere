@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_label">HelpEverywhere Assistant</string>
+    <string name="accessibility_service_description">HelpEverywhere uses this permission to identify buttons and apps on your screen, so it can show you exactly where to tap. Screen content is used only to assist you in real time.</string>
+</resources>

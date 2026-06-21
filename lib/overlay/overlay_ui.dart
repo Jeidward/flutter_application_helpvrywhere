@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:isolate';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -50,6 +52,9 @@ class _OverlayUIState extends State<OverlayUI> {
   String _currentInstruction = '';
   bool _isComplete = false;
   int _stepNumber = 1;
+  // PNG thumbnail of the area where the user must tap. Decoded from the
+  // base64 'thumbnail' field in the ai_step message. Null = text-only.
+  Uint8List? _currentThumbnail;
 
   // ── UI state ───────────────────────────────────────────────────────────────
   bool _isMinimized = false;
@@ -155,6 +160,7 @@ class _OverlayUIState extends State<OverlayUI> {
           _hidden = false; // bring overlay back if it was hidden for screenshot
           _stepNumber = (data['step'] as int?) ?? _stepNumber;
           _currentInstruction = '';
+          _currentThumbnail = null;
         });
         // CRITICAL: if we were in the small pill window when this arrived,
         // we MUST resize the native window back to full overlay size or
@@ -177,12 +183,24 @@ class _OverlayUIState extends State<OverlayUI> {
 
       // ── AI returned a guidance step ────────────────────────────────────────
       case 'ai_step':
+        // Decode the optional base64 thumbnail. We swallow errors silently —
+        // a broken thumbnail must never block the instruction from showing.
+        Uint8List? thumb;
+        final thumbBase64 = data['thumbnail'];
+        if (thumbBase64 is String && thumbBase64.isNotEmpty) {
+          try {
+            thumb = base64Decode(thumbBase64);
+          } catch (_) {
+            thumb = null;
+          }
+        }
         setState(() {
           _hidden = false;
           _isAnalyzing = false;
           _currentInstruction = (data['instruction'] as String?) ?? '';
           _stepNumber = (data['step_number'] as int?) ?? 1;
           _isComplete = data['is_complete'] == true;
+          _currentThumbnail = thumb;
         });
         // Voice-first flow:
         //   - In-progress step  → collapse to the pill so the user can tap
@@ -208,6 +226,7 @@ class _OverlayUIState extends State<OverlayUI> {
               (data['message'] as String?) ??
               'Something went wrong. Please try again.';
           _isComplete = false;
+          _currentThumbnail = null;
         });
         // Same fix: if the error arrived while we were in pill mode, grow
         // back to the full overlay so the error card has room.
@@ -227,6 +246,7 @@ class _OverlayUIState extends State<OverlayUI> {
       _lastWords = '';
       _currentInstruction = '';
       _isComplete = false;
+      _currentThumbnail = null;
     });
   }
 
@@ -311,6 +331,7 @@ class _OverlayUIState extends State<OverlayUI> {
         _isMinimized = false;
         _isComplete = false;
         _currentInstruction = '';
+        _currentThumbnail = null;
         _lastWords = '';
         _stepNumber = 1;
         _didSendAnalyze = false;
@@ -326,6 +347,7 @@ class _OverlayUIState extends State<OverlayUI> {
   void _onNextStep() {
     setState(() {
       _currentInstruction = '';
+      _currentThumbnail = null;
       _isAnalyzing = true;
     });
     _sendToMain({'type': 'next_step'});
@@ -334,6 +356,7 @@ class _OverlayUIState extends State<OverlayUI> {
   void _onNewQuestion() {
     setState(() {
       _currentInstruction = '';
+      _currentThumbnail = null;
       _isComplete = false;
       _lastWords = '';
       _isAnalyzing = false;
@@ -539,19 +562,57 @@ class _OverlayUIState extends State<OverlayUI> {
               ],
             ),
             const SizedBox(height: 6),
-            // Instruction text — 2 lines max so the pill stays compact;
-            // user taps to expand for the full version.
-            Text(
-              _currentInstruction,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.35,
-                color: Color(0xFF1F2937),
-                fontWeight: FontWeight.w500,
+            // Thumbnail (when present) sits next to the instruction so the
+            // user can match the cropped element to what they see on screen.
+            // Falls back to text-only when the AI didn't return a region.
+            if (_currentThumbnail != null)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: OverlayUI.blue, width: 2),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.memory(
+                        _currentThumbnail!,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _currentInstruction,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.3,
+                        color: Color(0xFF1F2937),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                _currentInstruction,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  height: 1.35,
+                  color: Color(0xFF1F2937),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -780,6 +841,48 @@ class _OverlayUIState extends State<OverlayUI> {
               ],
             ),
             const SizedBox(height: 12),
+
+            // Thumbnail (when present) — bigger here than in the pill since
+            // the result card has more room to breathe.
+            if (_currentThumbnail != null && !_isComplete) ...[
+              Center(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: OverlayUI.blue, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: OverlayUI.blue.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: Image.memory(
+                      _currentThumbnail!,
+                      width: 110,
+                      height: 110,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Center(
+                child: Text(
+                  'Look for this on your screen',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: OverlayUI._textMuted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Instruction text
             Text(

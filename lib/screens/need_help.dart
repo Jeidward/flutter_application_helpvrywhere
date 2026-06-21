@@ -42,6 +42,17 @@ class NeedHelpTab extends StatelessWidget {
                 if (granted) {
                   await SpeechBridge.instance.requestPermissionAndInit();
 
+                  // Encourage (but don't block on) enabling the accessibility
+                  // service — that's how we get perfectly-localized thumbnails.
+                  // If the user declines, we fall back to the AI's bbox guess.
+                  final hasA11y =
+                      await SpeechBridge.instance.isAccessibilityEnabled();
+                  if (!hasA11y && context.mounted) {
+                    final keepGoing =
+                        await _showAccessibilityOnboarding(context);
+                    if (!keepGoing) return; // user went to Settings; abort
+                  }
+
                   // CRITICAL: ask for the screen-capture permission RIGHT NOW
                   // (while the app is still in the foreground). If we wait
                   // until the user already navigated to WhatsApp/etc. and
@@ -102,6 +113,81 @@ class NeedHelpTab extends StatelessWidget {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
+}
+
+/// Friendly first-run dialog explaining why we want the accessibility
+/// permission. Returns true if the caller should continue with the
+/// overlay flow ("Skip for now"), false if the user opened Settings
+/// (they'll re-tap "AI Support" once they're back).
+Future<bool> _showAccessibilityOnboarding(BuildContext context) async {
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(
+        children: [
+          Icon(Icons.accessibility_new, color: Color(0xFF4A90E2), size: 28),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'One more thing',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+      content: const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'To show you EXACTLY which button to tap, the assistant needs '
+            'permission to read what is on your screen.',
+            style: TextStyle(fontSize: 15, height: 1.4),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'Without it the assistant still works, but the picture of the '
+            'button might not match perfectly.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'On the next screen, find "HelpEverywhere" and turn it on.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              fontStyle: FontStyle.italic,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Skip for now'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF4A90E2),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () async {
+            Navigator.of(ctx).pop(false);
+            await SpeechBridge.instance.openAccessibilitySettings();
+          },
+          child: const Text('Open Settings'),
+        ),
+      ],
+    ),
+  );
+  return result ?? true;
 }
 
 Widget _buildCard({
